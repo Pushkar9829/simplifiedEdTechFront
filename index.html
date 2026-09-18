@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" data-theme="classic-light" data-erp-mode="light">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IBDP Tutoring</title>
+    <script>
+      (function () {
+        try {
+          var queryMode = new URLSearchParams(location.search).get('mode');
+          var mode = queryMode === 'light' || queryMode === 'dark' ? queryMode : localStorage.getItem('erp-mode');
+          var theme = localStorage.getItem('erp-theme') || localStorage.getItem('ibdp_slate_theme');
+          var lightThemes = { 'classic-light': 1, 'aurora-light': 1, 'slate-light': 1, 'neu-peach': 1 };
+          var darkThemes = {
+            'classic-dark': 1,
+            'sky-immersive': 1,
+            'slate-immersive': 1,
+            'slate-neon': 1,
+            'neu-slate-glass': 1,
+          };
+          var dark;
+          if (mode === 'dark' || mode === 'light') dark = mode === 'dark';
+          else if (theme && darkThemes[theme]) dark = true;
+          else if (theme && lightThemes[theme]) dark = false;
+          else dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.setAttribute('data-theme', dark ? 'classic-dark' : 'classic-light');
+          document.documentElement.setAttribute('data-erp-mode', dark ? 'dark' : 'light');
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (e) {}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

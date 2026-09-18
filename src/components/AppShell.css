@@ -1,0 +1,11 @@
+/* App shell layout extras — core chrome lives in slate-theme.css */
+
+.erp-backdrop {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .erp-backdrop {
+    display: block;
+  }
+}

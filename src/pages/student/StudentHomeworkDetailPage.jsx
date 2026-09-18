@@ -1,0 +1,143 @@
+import { useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { getHomework, submitHomework } from '../../api';
+import { formatDate, statusBadge } from '../../utils/format';
+import { mediaUrl } from '../../utils/mediaUrl';
+import { titleCase } from './studentOptions';
+
+export default function StudentHomeworkDetailPage() {
+  const { id } = useParams();
+  const [selected, setSelected] = useState(null);
+  const [notes, setNotes] = useState('');
+  const [files, setFiles] = useState(null);
+  const [error, setError] = useState('');
+  const [msg, setMsg] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const detail = await getHomework(id);
+      setSelected(detail);
+      setNotes(detail.submission?.notes || '');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [id]);
+
+  if (loading) return <div className="empty">Loading assignment…</div>;
+  if (!selected?.assignment) {
+    return (
+      <div className="page stack">
+        {error && <div className="error-banner">{error}</div>}
+        <div className="erp-card empty">
+          Assignment not found. <Link to="/student/homework">Back</Link>
+        </div>
+      </div>
+    );
+  }
+
+  const a = selected.assignment;
+  const s = selected.submission;
+
+  return (
+    <div className="page stack">
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1 style={{ margin: 0 }}>{a.title}</h1>
+        <Link to="/student/homework" className="btn secondary">
+          Back to homework
+        </Link>
+      </div>
+
+      {msg && <div className="success-banner">{msg}</div>}
+      {error && <div className="error-banner">{error}</div>}
+
+      <div className="grid two">
+        <section className="erp-card stack">
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <span className={statusBadge(a.status)}>{titleCase(a.status)}</span>
+            <span className="muted">Due {formatDate(a.deadline)}</span>
+          </div>
+          <p>{a.description || 'No description.'}</p>
+          <p className="muted">Rubric: {a.rubric || '—'}</p>
+          <p className="muted">
+            Subject: {a.subjectId?.name || '—'} · Tutor:{' '}
+            {a.tutorUserId?.name || '—'}
+          </p>
+          {s && (
+            <div>
+              <h3>Current submission</h3>
+              <p>
+                Grade: <strong>{s.grade || 'Pending'}</strong>
+              </p>
+              <p>Feedback: {s.feedback || '—'}</p>
+              {s.notes && <p className="muted">Notes: {s.notes}</p>}
+              {!!s.files?.length && (
+                <p>
+                  Files:{' '}
+                  {s.files.map((f, i) => (
+                    <span key={`${f}-${i}`}>
+                      {i > 0 ? ', ' : ''}
+                      <a className="erp-link" href={mediaUrl(f)} target="_blank" rel="noreferrer">
+                        {String(f).split('/').pop()}
+                      </a>
+                    </span>
+                  ))}
+                </p>
+              )}
+            </div>
+          )}
+        </section>
+
+        <section className="erp-card stack">
+          <h2>Submit work</h2>
+          <div className="field">
+            <label>Notes</label>
+            <textarea
+              className="erp-search"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label>Files</label>
+            <input type="file" multiple onChange={(e) => setFiles(e.target.files)} />
+          </div>
+          <button
+            className="btn"
+            type="button"
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              setError('');
+              setMsg('');
+              const fd = new FormData();
+              fd.append('notes', notes);
+              if (files) [...files].forEach((f) => fd.append('files', f));
+              try {
+                await submitHomework(a._id, fd);
+                setMsg('Submitted');
+                setFiles(null);
+                load();
+              } catch (err) {
+                setError(err.message);
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            {saving ? 'Submitting…' : 'Submit assignment'}
+          </button>
+        </section>
+      </div>
+    </div>
+  );
+}

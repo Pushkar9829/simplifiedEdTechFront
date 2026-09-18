@@ -1,0 +1,339 @@
+/**
+ * Dense ERP UI — smaller type, controls, and spacing on all viewports.
+ * Scoped to .erp-dense (admin + tutor shells).
+ */
+
+.erp-dense {
+  --erp-font-xs: 10px;
+  --erp-font-sm: 11px;
+  --erp-font-base: 12px;
+  --erp-font-md: 13px;
+  --erp-font-lg: 14px;
+  --admin-ctrl-pad-y: 0.32rem;
+  --admin-ctrl-pad-x: 0.55rem;
+  --admin-btn-pad-y: 0.34rem;
+  --admin-btn-pad-x: 0.65rem;
+  font-size: var(--erp-font-base);
+}
+
+.erp-dense .erp-sidebar,
+.erp-dense .erp-sidebar-fixed {
+  width: 12.5rem;
+  padding: 0.55rem;
+  gap: 0.45rem;
+}
+
+.erp-dense .erp-shell-main,
+.erp-dense .erp-workspace {
+  margin-left: 12.5rem;
+}
+
+.erp-dense .erp-brand-block {
+  padding: 0.45rem 0.5rem;
+  gap: 0.45rem;
+}
+
+.erp-dense .erp-brand-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 0.4rem;
+  font-size: 10px;
+}
+
+.erp-dense .erp-brand-block strong {
+  font-size: 11px;
+}
+
+.erp-dense .erp-brand-block p {
+  font-size: 9px;
+  margin-top: 0.08rem;
+}
+
+.erp-dense .erp-nav-group {
+  margin-bottom: 0.45rem;
+  gap: 0.08rem;
+}
+
+.erp-dense .erp-nav-group-label,
+.erp-dense .erp-nav-label {
+  margin: 0 0 0.2rem 0.4rem;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+.erp-dense .erp-nav-item {
+  padding: 0.32rem 0.45rem;
+  border-radius: 0.5rem;
+  font-size: 11px;
+  gap: 0.35rem;
+}
+
+.erp-dense .erp-sidebar-foot {
+  padding: 0.5rem;
+  gap: 0.4rem;
+}
+
+.erp-dense .erp-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 0.4rem;
+  font-size: 9px;
+}
+
+.erp-dense .erp-user strong {
+  font-size: 11px;
+}
+
+.erp-dense .erp-user p {
+  font-size: 9px;
+}
+
+.erp-dense .erp-header-bar {
+  padding: 0.5rem 0.75rem;
+  gap: 0.55rem;
+}
+
+.erp-dense .erp-header-bar h1 {
+  font-size: 13px;
+}
+
+.erp-dense .erp-eyebrow {
+  font-size: 9px;
+  margin-bottom: 0.05rem;
+}
+
+.erp-dense .erp-header-actions {
+  gap: 0.3rem;
+}
+
+.erp-dense .erp-main-area {
+  padding: 0.65rem 0.75rem 1rem;
+}
+
+.erp-dense .page {
+  gap: 0.55rem;
+  max-width: 1180px;
+}
+
+.erp-dense .page > h1,
+.erp-dense .erp-page-title,
+.erp-dense h1 {
+  font-size: 14px !important;
+}
+
+.erp-dense h2,
+.erp-dense .erp-page-subtitle {
+  font-size: 12px;
+}
+
+.erp-dense h3 {
+  font-size: 11px;
+}
+
+.erp-dense .erp-card,
+.erp-dense .panel {
+  padding: 0.65rem 0.7rem;
+  border-radius: 0.55rem;
+}
+
+.erp-dense .erp-card-sm {
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.5rem;
+}
+
+.erp-dense .erp-page-header {
+  margin-bottom: 0.45rem;
+  gap: 0.5rem;
+}
+
+.erp-dense .grid {
+  gap: 0.5rem;
+}
+
+.erp-dense .stack {
+  gap: 0.5rem;
+}
+
+.erp-dense .row {
+  gap: 0.4rem;
+}
+
+.erp-dense .field {
+  gap: 0.22rem;
+  margin-bottom: 0.5rem;
+}
+
+.erp-dense .erp-label,
+.erp-dense .field label {
+  font-size: 9px;
+  letter-spacing: 0.03em;
+}
+
+.erp-dense .erp-input,
+.erp-dense .erp-search,
+.erp-dense .erp-select,
+.erp-dense input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']),
+.erp-dense textarea,
+.erp-dense select {
+  padding: var(--admin-ctrl-pad-y) var(--admin-ctrl-pad-x);
+  font-size: 11px;
+  border-radius: 0.4rem;
+  min-height: 1.7rem;
+  line-height: 1.3;
+}
+
+.erp-dense .erp-select-wrap .erp-select,
+.erp-dense .erp-select-wrap select {
+  padding-right: 1.55rem;
+  min-height: 1.7rem;
+}
+
+.erp-dense .erp-select-wrap-inline {
+  min-width: 6.5rem;
+}
+
+.erp-dense .erp-select-wrap::after {
+  right: 0.55rem;
+  width: 0.32rem;
+  height: 0.32rem;
+}
+
+.erp-dense textarea {
+  min-height: 64px;
+}
+
+.erp-dense .erp-btn-primary,
+.erp-dense .erp-btn-secondary,
+.erp-dense .erp-btn-danger,
+.erp-dense .btn,
+.erp-dense .btn.secondary,
+.erp-dense .btn.danger,
+.erp-dense .btn.ghost {
+  padding: var(--admin-btn-pad-y) var(--admin-btn-pad-x);
+  font-size: 11px;
+  border-radius: 0.4rem;
+  gap: 0.25rem;
+  line-height: 1.25;
+}
+
+.erp-dense .erp-icon-btn {
+  padding: 0.28rem 0.45rem;
+  font-size: 10px;
+  border-radius: 0.35rem;
+}
+
+.erp-dense .erp-status-badge,
+.erp-dense .badge {
+  padding: 0.08rem 0.35rem;
+  font-size: 9px;
+}
+
+.erp-dense .erp-data-table,
+.erp-dense .table {
+  font-size: 11px;
+}
+
+.erp-dense .erp-data-table thead,
+.erp-dense .table thead {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.erp-dense .erp-data-table th,
+.erp-dense .erp-data-table td,
+.erp-dense .table th,
+.erp-dense .table td {
+  padding: 0.4rem 0.5rem;
+}
+
+.erp-dense .stat {
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.5rem;
+}
+
+.erp-dense .stat .label,
+.erp-dense .erp-kpi-label {
+  font-size: 9px;
+}
+
+.erp-dense .stat .value,
+.erp-dense .erp-kpi-value {
+  font-size: 16px;
+  margin-top: 0.2rem;
+}
+
+.erp-dense .empty,
+.erp-dense .muted {
+  font-size: 11px;
+}
+
+.erp-dense .error-banner,
+.erp-dense .success-banner,
+.erp-dense .erp-alert-error {
+  padding: 0.45rem 0.6rem;
+  font-size: 11px;
+  border-radius: 0.4rem;
+}
+
+.erp-dense .erp-tabs {
+  margin-bottom: 0.55rem;
+}
+
+.erp-dense .erp-tab {
+  padding: 0.35rem 0.5rem;
+  font-size: 11px;
+}
+
+.erp-dense .erp-toolbar {
+  padding: 0.4rem 0.5rem;
+  gap: 0.45rem;
+}
+
+.erp-dense .erp-modal-header {
+  padding: 0.5rem 0.65rem;
+}
+
+.erp-dense .erp-modal-header h2 {
+  font-size: 13px;
+}
+
+.erp-dense .erp-modal-body {
+  padding: 0.65rem 0.7rem;
+}
+
+.erp-dense .erp-modal-footer,
+.erp-dense .erp-pager {
+  padding: 0.45rem 0.65rem;
+}
+
+.erp-dense .erp-table-scroll {
+  max-height: calc(100vh - 14rem);
+}
+
+.erp-dense .page .erp-page-title {
+  display: none;
+}
+
+.erp-dense code {
+  font-size: 10px;
+}
+
+@media (max-width: 900px) {
+  .erp-dense .erp-sidebar,
+  .erp-dense .erp-sidebar-fixed {
+    width: min(78vw, 15rem);
+  }
+
+  .erp-dense .erp-shell-main,
+  .erp-dense .erp-workspace {
+    margin-left: 0;
+  }
+
+  .erp-dense .erp-header-bar {
+    padding: 0.45rem 0.6rem;
+  }
+
+  .erp-dense .erp-main-area {
+    padding: 0.55rem 0.6rem 0.85rem;
+  }
+}

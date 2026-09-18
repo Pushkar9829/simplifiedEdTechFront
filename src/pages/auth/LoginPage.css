@@ -1,0 +1,107 @@
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.login-hero {
+  padding: clamp(1.5rem, 4vw, 2.75rem) !important;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: calc(100vh - 2rem);
+}
+
+.login-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: auto;
+}
+
+.login-hero h1 {
+  font-size: clamp(28px, 5vw, 42px);
+  max-width: 12ch;
+  margin: 0.4rem 0 0.85rem;
+}
+
+.login-hero > p {
+  max-width: 34rem;
+  color: var(--erp-text-secondary);
+  font-size: var(--erp-font-md);
+  margin: 0;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: var(--erp-font-xs);
+  font-weight: 700;
+  color: var(--erp-text-muted);
+  margin: 0;
+}
+
+.login-card {
+  margin: auto;
+  width: min(420px, 100%);
+  animation: riseIn 0.3s var(--erp-ease) both;
+}
+
+.login-card .erp-btn-primary,
+.login-card .erp-full {
+  width: 100%;
+}
+
+.login-card .row .erp-btn-primary,
+.login-card .row .erp-btn-secondary {
+  width: auto;
+  flex: 1;
+}
+
+.demo-hint {
+  margin-top: 1rem;
+  font-size: var(--erp-font-xs);
+  line-height: 1.5;
+}
+
+.role-chips {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.45rem;
+}
+
+.role-chip {
+  border: 1px solid var(--erp-border);
+  background: var(--erp-glass);
+  color: var(--erp-text-secondary);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.5rem;
+  font-size: var(--erp-font-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s var(--erp-ease), color 0.15s var(--erp-ease),
+    box-shadow 0.15s var(--erp-ease);
+}
+
+.role-chip:hover {
+  color: var(--erp-text-primary);
+}
+
+.role-chip.active {
+  color: var(--erp-accent);
+  background: var(--erp-accent-muted);
+  border-color: var(--erp-accent);
+  box-shadow: inset 3px 0 0 var(--erp-accent);
+}
+
+@media (max-width: 860px) {
+  .login-page {
+    grid-template-columns: 1fr;
+  }
+
+  .login-hero {
+    min-height: auto;
+  }
+}
