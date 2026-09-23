@@ -7,13 +7,21 @@ import {
   ErpCard,
   ErpConfirm,
   ErpDataTable,
+  ErpList,
+  ErpListItem,
+  ErpOverflow,
+  ErpPager,
   ErpPageHeader,
-  ErpSelect,
-  ErpToolbar,
+  ErpSearch,
+  ErpTabs,
+  useIsPhone,
 } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
+import { money } from '../../utils/format';
 import { resourceTypeOptions, titleCase } from './tutorOptions';
 
 export default function TutorResources() {
+  const phone = useIsPhone();
   const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [filterType, setFilterType] = useState('');
@@ -43,28 +51,33 @@ export default function TutorResources() {
     load();
   }, [user?._id, filterType]);
 
+  const list = useListFilter(
+    items,
+    (r) => [r.title, r.topic, r.subjectId?.name, r.type, r.level, r.accessType].filter(Boolean).join(' '),
+    { resetKey: filterType }
+  );
+
   return (
     <div className="page stack">
       <ErpPageHeader subtitle="Files you share with students." />
       {error && <div className="error-banner">{error}</div>}
 
-      <ErpToolbar
-        actions={
+      <div className="avail-bar">
+        <ErpTabs
+          value={filterType || 'all'}
+          onChange={(value) => setFilterType(value === 'all' ? '' : value)}
+          tabs={resourceTypeOptions(true).map((o) => ({
+            value: o.value || 'all',
+            label: o.label,
+          }))}
+        />
+        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search resources" />
+        <div className="avail-bar-actions">
           <Link to="/tutor/resources/new" className="erp-btn-primary">
             Create resource
           </Link>
-        }
-      >
-        <ErpSelect
-          inline
-          value={filterType}
-          options={resourceTypeOptions(true)}
-          onChange={(e) => setFilterType(e.target.value)}
-        />
-        <ErpButton variant="secondary" onClick={load}>
-          Refresh
-        </ErpButton>
-      </ErpToolbar>
+        </div>
+      </div>
 
       <ErpCard className="erp-card-flush">
         {loading ? (
@@ -74,6 +87,33 @@ export default function TutorResources() {
             No resources yet.{' '}
             <Link to="/tutor/resources/new">Upload your first resource</Link>
           </div>
+        ) : list.noMatch ? (
+          <div className="empty">No resources match that search.</div>
+        ) : phone ? (
+          <div style={{ padding: '0.65rem' }}>
+            <ErpList>
+              {list.items.map((r) => (
+                <ErpListItem
+                  key={r._id}
+                  title={r.title}
+                  meta={`${titleCase(r.type)} · ${r.subjectId?.name || 'Resource'} · ${r.level}`}
+                  to={`/tutor/resources/${r._id}/edit`}
+                  actions={
+                    <ErpOverflow
+                      items={[
+                        { label: 'Edit', to: `/tutor/resources/${r._id}/edit` },
+                        { label: 'Delete', danger: true, onClick: () => setPendingDelete(r) },
+                      ]}
+                    />
+                  }
+                >
+                  <div className="muted">
+                    {r.accessType === 'paid' ? `Paid · ${money(r.price, r.currency)}` : 'Free'}
+                  </div>
+                </ErpListItem>
+              ))}
+            </ErpList>
+          </div>
         ) : (
           <div className="erp-table-scroll">
             <ErpDataTable>
@@ -82,12 +122,13 @@ export default function TutorResources() {
                   <th>Title</th>
                   <th>Type</th>
                   <th>Subject</th>
-                  <th>Level</th>
-                  <th />
+                    <th>Level</th>
+                    <th>Access</th>
+                    <th />
                 </tr>
               </thead>
               <tbody>
-                {items.map((r) => (
+                {list.items.map((r) => (
                   <tr key={r._id}>
                     <td>
                       <strong>{r.title}</strong>
@@ -97,6 +138,15 @@ export default function TutorResources() {
                     <td>{r.subjectId?.name || '—'}</td>
                     <td>{r.level}</td>
                     <td>
+                      {r.accessType === 'paid' ? `Paid · ${money(r.price, r.currency)}` : 'Free'}
+                      {r.downloadableUntil && (
+                        <div className="muted">until {new Date(r.downloadableUntil).toLocaleDateString()}</div>
+                      )}
+                    </td>
+                    <td className="row">
+                      <Link to={`/tutor/resources/${r._id}/edit`} className="erp-btn-secondary">
+                        Edit
+                      </Link>
                       <ErpButton variant="danger" onClick={() => setPendingDelete(r)}>
                         Delete
                       </ErpButton>
@@ -107,6 +157,7 @@ export default function TutorResources() {
             </ErpDataTable>
           </div>
         )}
+        {list.total > 0 && <ErpPager {...list.pagerProps} noun="resource" />}
       </ErpCard>
 
       <ErpConfirm

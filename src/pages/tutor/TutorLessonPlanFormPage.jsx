@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { addLessonPlan, listSubjects } from '../../api';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { addLessonPlan, getLessonPlan, listSubjects, updateLessonPlan } from '../../api';
 import { ErpSelect } from '../../components/erp';
 import { LESSON_STATUS_OPTIONS, subjectOptions } from './tutorOptions';
 
@@ -13,6 +13,7 @@ const emptyForm = {
 };
 
 export default function TutorLessonPlanFormPage() {
+  const { id } = useParams();
   const navigate = useNavigate();
   const [subjects, setSubjects] = useState([]);
   const [form, setForm] = useState(emptyForm);
@@ -21,22 +22,38 @@ export default function TutorLessonPlanFormPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    listSubjects()
-      .then((s) => {
+    (async () => {
+      try {
+        const s = await listSubjects();
         const list = s.items || [];
         setSubjects(list);
-        if (list[0]) setForm((f) => ({ ...f, subjectId: list[0]._id }));
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
+        if (id) {
+          const plan = await getLessonPlan(id);
+          setForm({
+            title: plan.title || '',
+            subjectId: plan.subjectId?._id || plan.subjectId || '',
+            objectives: plan.objectives || '',
+            content: plan.content || '',
+            status: plan.status || 'draft',
+          });
+        } else if (list[0]) {
+          setForm((f) => ({ ...f, subjectId: f.subjectId || list[0]._id }));
+        }
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [id]);
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
     setError('');
     try {
-      await addLessonPlan(form);
+      if (id) await updateLessonPlan(id, form);
+      else await addLessonPlan(form);
       navigate('/tutor/lesson-plans');
     } catch (err) {
       setError(err.message);
@@ -48,7 +65,7 @@ export default function TutorLessonPlanFormPage() {
   return (
     <div className="page stack">
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ margin: 0 }}>Create lesson plan</h1>
+        <h1 style={{ margin: 0 }}>{id ? 'Edit lesson plan' : 'Create lesson plan'}</h1>
         <Link to="/tutor/lesson-plans" className="btn secondary">
           Back to plans
         </Link>
@@ -101,9 +118,9 @@ export default function TutorLessonPlanFormPage() {
               onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
             />
           </div>
-          <div className="row">
+          <div className="erp-sticky-actions" style={{ gridColumn: '1 / -1' }}>
             <button className="btn" disabled={saving}>
-              {saving ? 'Saving…' : 'Create plan'}
+              {saving ? 'Saving…' : id ? 'Save plan' : 'Create plan'}
             </button>
             <Link to="/tutor/lesson-plans" className="btn secondary">
               Cancel

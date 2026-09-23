@@ -7,6 +7,19 @@ export function formatDate(value) {
   }
 }
 
+export function formatInZone(value, timeZone) {
+  if (!value) return '—';
+  try {
+    return new Date(value).toLocaleString(undefined, {
+      timeZone: timeZone || undefined,
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+  } catch {
+    return new Date(value).toLocaleString();
+  }
+}
+
 export function money(amount, currency = 'USD') {
   const n = Number(amount || 0);
   try {

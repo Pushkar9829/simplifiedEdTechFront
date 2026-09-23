@@ -5,12 +5,14 @@ import {
   ErpCard,
   ErpDataTable,
   ErpModal,
+  ErpPager,
   ErpPageHeader,
+  ErpSearch,
   ErpSelect,
   ErpStatusBadge,
   ErpTabs,
-  ErpToolbar,
 } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 import { formatDate } from '../../utils/format';
 import { TICKET_STATUS_OPTIONS, TICKET_STATUS_SET_OPTIONS } from './adminOptions';
 import { useAdminModalQuery } from './useAdminModalQuery';
@@ -47,6 +49,11 @@ export default function AdminTicketsPage() {
     load();
   }, [status]);
 
+  const list = useListFilter(
+    items,
+    (t) => [t.subject, t.category, t.userId?.name, t.userId?.phone, t.status].filter(Boolean).join(' '),
+    { resetKey: status }
+  );
   const selected = items.find((t) => t._id === editId) || null;
 
   const saveTicket = async (ticket, extra = {}) => {
@@ -70,28 +77,30 @@ export default function AdminTicketsPage() {
       <ErpPageHeader subtitle="Open a ticket to change status and save an admin note." />
       {error && <div className="error-banner">{error}</div>}
 
-      <ErpToolbar
-        actions={
+      <div className="avail-bar">
+        <ErpTabs
+          value={status || 'all'}
+          onChange={(value) => setStatus(value === 'all' ? '' : value)}
+          tabs={TICKET_STATUS_OPTIONS.map((o) => ({
+            value: o.value || 'all',
+            label: o.label,
+          }))}
+        />
+        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search tickets" />
+        <div className="avail-bar-actions">
           <ErpButton variant="secondary" onClick={load}>
             Refresh
           </ErpButton>
-        }
-      />
-
-      <ErpTabs
-        value={status || 'all'}
-        onChange={(value) => setStatus(value === 'all' ? '' : value)}
-        tabs={TICKET_STATUS_OPTIONS.map((o) => ({
-          value: o.value || 'all',
-          label: o.label,
-        }))}
-      />
+        </div>
+      </div>
 
       <ErpCard className="erp-card-flush">
         {loading ? (
           <div className="empty">Loading tickets…</div>
         ) : !items.length ? (
           <div className="empty">No tickets.</div>
+        ) : list.noMatch ? (
+          <div className="empty">No tickets match that search.</div>
         ) : (
           <div className="erp-table-scroll">
             <ErpDataTable>
@@ -106,7 +115,7 @@ export default function AdminTicketsPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((t) => (
+                {list.items.map((t) => (
                   <tr key={t._id} className="erp-row-click" onClick={() => openEdit(t._id)}>
                     <td>
                       <strong>{t.subject}</strong>
@@ -136,6 +145,7 @@ export default function AdminTicketsPage() {
             </ErpDataTable>
           </div>
         )}
+        {list.total > 0 && <ErpPager {...list.pagerProps} noun="ticket" />}
       </ErpCard>
 
       <ErpModal

@@ -37,6 +37,14 @@ import TutorResources from './pages/tutor/TutorResources';
 import TutorResourceFormPage from './pages/tutor/TutorResourceFormPage';
 import TutorEarnings from './pages/tutor/TutorEarnings';
 import TutorVerification from './pages/tutor/TutorVerification';
+import TutorCourses from './pages/tutor/TutorCourses';
+import TutorCourseFormPage from './pages/tutor/TutorCourseFormPage';
+import TutorProjects from './pages/tutor/TutorProjects';
+import TutorProjectFormPage from './pages/tutor/TutorProjectFormPage';
+import TutorProjectDetailPage from './pages/tutor/TutorProjectDetailPage';
+import TutorCourseDetailPage from './pages/tutor/TutorCourseDetailPage';
+import StudentProjects from './pages/student/StudentProjects';
+import StudentCourses from './pages/student/StudentCourses';
 import ParentDashboard from './pages/parent/ParentDashboard';
 import ParentChildrenPage from './pages/parent/ParentChildrenPage';
 import ParentLink from './pages/parent/ParentLink';
@@ -81,6 +89,8 @@ export default function App() {
           <Route path="resources" element={<StudentResources />} />
           <Route path="homework" element={<StudentHomework />} />
           <Route path="homework/:id" element={<StudentHomeworkDetailPage />} />
+          <Route path="projects" element={<StudentProjects />} />
+          <Route path="courses" element={<StudentCourses />} />
           <Route path="progress" element={<StudentProgress />} />
           <Route path="progress/log" element={<StudentProgressLogPage />} />
           <Route path="payments" element={<PaymentsPage />} />
@@ -98,11 +108,21 @@ export default function App() {
           <Route path="bookings" element={<TutorBookings />} />
           <Route path="homework" element={<TutorHomework />} />
           <Route path="homework/new" element={<TutorHomeworkFormPage />} />
+          <Route path="projects" element={<TutorProjects />} />
+          <Route path="projects/new" element={<TutorProjectFormPage />} />
+          <Route path="projects/:id" element={<TutorProjectDetailPage />} />
+          <Route path="projects/:id/edit" element={<TutorProjectFormPage />} />
           <Route path="students" element={<TutorStudents />} />
           <Route path="lesson-plans" element={<TutorLessonPlans />} />
           <Route path="lesson-plans/new" element={<TutorLessonPlanFormPage />} />
+          <Route path="lesson-plans/:id/edit" element={<TutorLessonPlanFormPage />} />
+          <Route path="courses" element={<TutorCourses />} />
+          <Route path="courses/new" element={<TutorCourseFormPage />} />
+          <Route path="courses/:id" element={<TutorCourseDetailPage />} />
+          <Route path="courses/:id/edit" element={<TutorCourseFormPage />} />
           <Route path="resources" element={<TutorResources />} />
           <Route path="resources/new" element={<TutorResourceFormPage />} />
+          <Route path="resources/:id/edit" element={<TutorResourceFormPage />} />
           <Route path="earnings" element={<TutorEarnings />} />
           <Route path="wallet" element={<WalletPage />} />
           <Route path="verification" element={<TutorVerification />} />
@@ -121,6 +141,7 @@ export default function App() {
           <Route path="tutors" element={<ParentTutors />} />
           <Route path="tutors/:childId/:id" element={<ParentTutorDetail />} />
           <Route path="bookings" element={<StudentBookings />} />
+          <Route path="projects" element={<StudentProjects />} />
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="wallet" element={<WalletPage />} />
           <Route path="messages" element={<MessagesPage />} />

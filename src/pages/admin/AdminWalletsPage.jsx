@@ -12,12 +12,14 @@ import {
   ErpConfirm,
   ErpDataTable,
   ErpModal,
+  ErpPager,
   ErpPageHeader,
+  ErpSearch,
   ErpSelect,
   ErpStatusBadge,
   ErpTabs,
-  ErpToolbar,
 } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 import { formatDate, money } from '../../utils/format';
 import { useAdminModalQuery } from './useAdminModalQuery';
 
@@ -54,6 +56,9 @@ export default function AdminWalletsPage() {
     load();
   }, []);
 
+  const list = useListFilter(withdrawals, (w) =>
+    [w.tutorUserId?.name, w.tutorUserId?.phone, w.status, w.cycle].filter(Boolean).join(' ')
+  );
   const selected = withdrawals.find((w) => w._id === editId) || null;
 
   const credit = async () => {
@@ -74,23 +79,22 @@ export default function AdminWalletsPage() {
       {error && <div className="error-banner">{error}</div>}
       {msg && <div className="success-banner">{msg}</div>}
 
-      <ErpToolbar
-        actions={
+      <div className="avail-bar">
+        <ErpTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'overview', label: 'Overview' },
+            { value: 'topup', label: 'Top-up' },
+            { value: 'withdrawals', label: 'Withdrawals' },
+          ]}
+        />
+        <div className="avail-bar-actions">
           <ErpButton variant="secondary" onClick={load}>
             Refresh
           </ErpButton>
-        }
-      />
-
-      <ErpTabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { value: 'overview', label: 'Overview' },
-          { value: 'topup', label: 'Top-up' },
-          { value: 'withdrawals', label: 'Withdrawals' },
-        ]}
-      />
+        </div>
+      </div>
 
       {tab === 'overview' && (
         <div className="stat">
@@ -127,8 +131,11 @@ export default function AdminWalletsPage() {
 
       {tab === 'withdrawals' && (
         <ErpCard className="erp-card-flush">
+          <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search withdrawals" />
           {!withdrawals.length ? (
             <div className="empty">No withdrawals.</div>
+          ) : list.noMatch ? (
+            <div className="empty">No withdrawals match that search.</div>
           ) : (
             <div className="erp-table-scroll">
               <ErpDataTable>
@@ -136,13 +143,15 @@ export default function AdminWalletsPage() {
                   <tr>
                     <th>Tutor</th>
                     <th>Amount</th>
+                    <th>Cycle</th>
+                    <th>Bank</th>
                     <th>Status</th>
                     <th>When</th>
                     <th />
                   </tr>
                 </thead>
                 <tbody>
-                  {withdrawals.map((w) => (
+                  {list.items.map((w) => (
                     <tr
                       key={w._id}
                       className={w.status === 'pending' ? 'erp-row-click' : ''}
@@ -150,6 +159,12 @@ export default function AdminWalletsPage() {
                     >
                       <td>{w.tutorUserId?.name || w.tutorUserId?.phone}</td>
                       <td>{money(w.amount)}</td>
+                      <td>{w.cycle || '—'}</td>
+                      <td>
+                        {w.bankAccountId
+                          ? `${w.bankAccountId.holderName || ''} •••• ${w.bankAccountId.last4 || ''} (${w.bankAccountId.status || ''})`
+                          : '—'}
+                      </td>
                       <td>
                         <ErpStatusBadge status={w.status}>{w.status}</ErpStatusBadge>
                       </td>
@@ -173,6 +188,7 @@ export default function AdminWalletsPage() {
               </ErpDataTable>
             </div>
           )}
+          {list.total > 0 && <ErpPager {...list.pagerProps} noun="withdrawal" />}
         </ErpCard>
       )}
 

@@ -12,12 +12,14 @@ import {
   ErpConfirm,
   ErpDataTable,
   ErpModal,
+  ErpPager,
   ErpPageHeader,
+  ErpSearch,
   ErpSelect,
   ErpStatusBadge,
   ErpTabs,
-  ErpToolbar,
 } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 import { LEVEL_OPTIONS, resourceTypeOptions, subjectOptions } from './adminOptions';
 import { useAdminModalQuery } from './useAdminModalQuery';
 
@@ -226,41 +228,39 @@ export default function AdminResourcesPage() {
     if (tab === 'inactive') return items.filter((r) => r.isActive === false);
     return items;
   }, [items, tab]);
+  const list = useListFilter(visible, (r) => [r.title, r.topic, r.subjectId?.name, r.type].filter(Boolean).join(' '), {
+    resetKey: `${tab}-${filterType}`,
+  });
 
   return (
     <div className="page stack">
       <ErpPageHeader subtitle="Notes, papers, and other learning files for students." />
       {error && <div className="error-banner">{error}</div>}
 
-      <ErpToolbar
-        actions={<ErpButton onClick={openNew}>Create resource</ErpButton>}
-      >
-        <input
-          className="erp-search"
-          placeholder="Search resources"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+      <div className="avail-bar">
+        <ErpTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'all', label: `All (${items.length})` },
+            { value: 'active', label: 'Active' },
+            { value: 'inactive', label: 'Inactive' },
+          ]}
         />
-        <ErpButton variant="secondary" onClick={load}>
-          Search
-        </ErpButton>
+        <ErpSearch value={search} onChange={setSearch} placeholder="Search resources" />
         <ErpSelect
           inline
           value={filterType}
           options={resourceTypeOptions(true)}
           onChange={(e) => setFilterType(e.target.value)}
         />
-      </ErpToolbar>
-
-      <ErpTabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { value: 'all', label: `All (${items.length})` },
-          { value: 'active', label: 'Active' },
-          { value: 'inactive', label: 'Inactive' },
-        ]}
-      />
+        <div className="avail-bar-actions">
+          <ErpButton variant="secondary" onClick={load}>
+            Search
+          </ErpButton>
+          <ErpButton onClick={openNew}>Create resource</ErpButton>
+        </div>
+      </div>
 
       <ErpCard className="erp-card-flush">
         {loading ? (
@@ -272,6 +272,8 @@ export default function AdminResourcesPage() {
               Create your first resource
             </button>
           </div>
+        ) : list.noMatch ? (
+          <div className="empty">No resources match that search.</div>
         ) : (
           <div className="erp-table-scroll">
             <ErpDataTable>
@@ -285,7 +287,7 @@ export default function AdminResourcesPage() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((r) => (
+                {list.items.map((r) => (
                   <tr key={r._id} className="erp-row-click" onClick={() => openEdit(r._id)}>
                     <td>
                       <strong>{r.title}</strong>
@@ -314,6 +316,7 @@ export default function AdminResourcesPage() {
             </ErpDataTable>
           </div>
         )}
+        {list.total > 0 && <ErpPager {...list.pagerProps} noun="resource" />}
       </ErpCard>
 
       <ErpModal

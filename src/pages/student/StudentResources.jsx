@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import {
   bookmarkResource,
+  downloadResource,
   listResources,
   listSubjects,
   myBookmarks,
+  purchaseResource,
   unbookmarkResource,
 } from '../../api';
-import { ErpSelect } from '../../components/erp';
+import { money } from '../../utils/format';
+import { ErpButton, ErpPager, ErpSearch, ErpSelect, ErpTabs } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 import {
   resourceTypeOptions,
   subjectFilterOptions,
@@ -43,6 +47,9 @@ export default function StudentResources() {
     load();
   }, []);
 
+  const list = useListFilter(items, (r) =>
+    [r.title, r.topic, r.subjectId?.name, r.type, r.level].filter(Boolean).join(' ')
+  );
   const bookmarkedIds = new Set(
     bookmarks.map((b) => (b.resourceId?._id || b.resourceId || '').toString())
   );
@@ -58,42 +65,42 @@ export default function StudentResources() {
 
       {error && <div className="error-banner">{error}</div>}
 
-      <form
-        className="erp-card row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          load();
-        }}
-      >
+      <div className="avail-bar">
+        <ErpTabs
+          value={filters.type || 'all'}
+          onChange={(value) => setFilters((f) => ({ ...f, type: value === 'all' ? '' : value }))}
+          tabs={resourceTypeOptions(true).map((o) => ({
+            value: o.value || 'all',
+            label: o.label,
+          }))}
+        />
+        <ErpSearch
+          value={filters.search}
+          onChange={(value) => setFilters((f) => ({ ...f, search: value }))}
+          placeholder="Search resources"
+        />
         <ErpSelect
           inline
           value={filters.subjectId}
           options={subjectFilterOptions(subjects)}
           onChange={(e) => setFilters((f) => ({ ...f, subjectId: e.target.value }))}
         />
-        <ErpSelect
-          inline
-          value={filters.type}
-          options={resourceTypeOptions(true)}
-          onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
-        />
-        <input
-          className="erp-search"
-          placeholder="Search"
-          value={filters.search}
-          onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-          style={{ flex: 1 }}
-        />
-        <button className="btn">Filter</button>
-      </form>
+        <div className="avail-bar-actions">
+          <ErpButton type="button" onClick={load}>
+            Apply
+          </ErpButton>
+        </div>
+      </div>
 
       {loading ? (
         <div className="erp-card empty">Loading resources…</div>
       ) : !items.length ? (
         <div className="erp-card empty">No resources found.</div>
+      ) : list.noMatch ? (
+        <div className="erp-card empty">No resources match that search.</div>
       ) : (
         <div className="grid two">
-          {items.map((r) => (
+          {list.items.map((r) => (
             <div key={r._id} className="erp-card stack">
               <span className="badge">{titleCase(r.type)}</span>
               <h3 style={{ margin: 0 }}>{r.title}</h3>
@@ -101,10 +108,46 @@ export default function StudentResources() {
                 {r.subjectId?.name} · {r.level} · {r.topic || '—'}
               </p>
               {r.description && <p>{r.description}</p>}
+              <p className="muted">
+                {r.accessType === 'paid' ? money(r.price, r.currency) : 'Free'}
+                {r.downloadableUntil && ` · until ${new Date(r.downloadableUntil).toLocaleDateString()}`}
+              </p>
               {r.fileUrl && (
                 <a className="erp-link" href={mediaUrl(r.fileUrl)} target="_blank" rel="noreferrer">
                   Open file
                 </a>
+              )}
+              {r.accessType === 'paid' && !r.purchased && (
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await purchaseResource(r._id);
+                      window.location.href = '/student/payments';
+                    } catch (err) {
+                      setError(err.message);
+                    }
+                  }}
+                >
+                  Buy
+                </button>
+              )}
+              {(r.purchased || r.accessType !== 'paid') && r.downloadOpen && (
+                <button
+                  className="btn secondary"
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const d = await downloadResource(r._id);
+                      window.open(mediaUrl(d.fileUrl), '_blank', 'noopener');
+                    } catch (err) {
+                      setError(err.message);
+                    }
+                  }}
+                >
+                  Download
+                </button>
               )}
               {bookmarkedIds.has(r._id) ? (
                 <button
@@ -141,6 +184,7 @@ export default function StudentResources() {
           ))}
         </div>
       )}
+      {list.total > 0 && <ErpPager {...list.pagerProps} noun="resource" />}
     </div>
   );
 }

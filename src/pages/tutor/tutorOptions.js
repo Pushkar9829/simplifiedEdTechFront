@@ -15,11 +15,30 @@ export const LESSON_STATUS_OPTIONS = [
 ];
 
 export const VERIFICATION_DOC_FIELDS = [
-  { key: 'identityDoc', label: 'Identity document' },
-  { key: 'degreeDoc', label: 'Degree document' },
-  { key: 'certificateDoc', label: 'Teaching certificate' },
-  { key: 'resumeDoc', label: 'Resume / CV' },
+  { key: 'identity', label: 'Identity documents', hint: 'Passport, national ID, driving licence' },
+  { key: 'degree', label: 'Degree documents', hint: 'Degree certificates and transcripts' },
+  { key: 'certificate', label: 'Teaching certificates', hint: 'B.Ed, IB workshops, examiner letters' },
+  { key: 'resume', label: 'Resume / CV', hint: 'Latest CV and experience letters' },
 ];
+
+export function browserTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+export function timezoneOptions(extra = []) {
+  let zones = [];
+  try {
+    zones = Intl.supportedValuesOf('timeZone');
+  } catch {
+    zones = ['UTC'];
+  }
+  const all = [...new Set([...extra.filter(Boolean), ...zones])];
+  return all.map((z) => ({ value: z, label: z.replaceAll('_', ' ') }));
+}
 
 export function studentOptions(students = []) {
   return [

@@ -1,27 +1,31 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import {
-  createHomework,
-  listBookings,
-  listSubjects,
-} from '../../api';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { createHomework, listBookings, listSubjects } from '../../api';
 import { ErpSelect } from '../../components/erp';
+import { formatDate } from '../../utils/format';
+import { GRADING_SCHEME_OPTIONS } from '../../utils/grading';
 import { studentOptions, subjectOptions } from './tutorOptions';
 
 const emptyForm = {
   studentUserId: '',
   subjectId: '',
+  bookingId: '',
   title: '',
   description: '',
   deadline: '',
   rubric: '',
+  gradingScheme: 'ib_1_7',
+  maxScore: '',
 };
 
 export default function TutorHomeworkFormPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [students, setStudents] = useState([]);
   const [subjects, setSubjects] = useState([]);
-  const [form, setForm] = useState(emptyForm);
+  const [bookings, setBookings] = useState([]);
+  const [form, setForm] = useState({ ...emptyForm, bookingId: params.get('bookingId') || '' });
+  const [files, setFiles] = useState([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -30,9 +34,10 @@ export default function TutorHomeworkFormPage() {
     (async () => {
       setLoading(true);
       try {
-        const [bookings, subs] = await Promise.all([listBookings(), listSubjects()]);
+        const [bookingPage, subs] = await Promise.all([listBookings(), listSubjects()]);
+        const items = bookingPage.items || [];
         const uniq = {};
-        (bookings.items || []).forEach((b) => {
+        items.forEach((b) => {
           const s = b.studentUserId;
           if (s?._id) uniq[s._id] = s;
         });
@@ -40,10 +45,13 @@ export default function TutorHomeworkFormPage() {
         const subjectList = subs.items || [];
         setStudents(studentList);
         setSubjects(subjectList);
+        setBookings(items);
+        const pre = items.find((b) => b._id === params.get('bookingId'));
         setForm((f) => ({
           ...f,
-          studentUserId: studentList[0]?._id || '',
-          subjectId: subjectList[0]?._id || '',
+          studentUserId: pre?.studentUserId?._id || studentList[0]?._id || '',
+          subjectId: pre?.subjectId?._id || subjectList[0]?._id || '',
+          bookingId: pre?._id || f.bookingId,
         }));
       } catch (err) {
         setError(err.message);
@@ -51,17 +59,40 @@ export default function TutorHomeworkFormPage() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [params]);
+
+  const studentBookings = useMemo(
+    () => bookings.filter((b) => (b.studentUserId?._id || b.studentUserId) === form.studentUserId),
+    [bookings, form.studentUserId]
+  );
+
+  const onBooking = (bookingId) => {
+    const b = bookings.find((x) => x._id === bookingId);
+    setForm((f) => ({
+      ...f,
+      bookingId,
+      studentUserId: b?.studentUserId?._id || f.studentUserId,
+      subjectId: b?.subjectId?._id || f.subjectId,
+    }));
+  };
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
     setError('');
     try {
-      await createHomework({
-        ...form,
-        deadline: new Date(form.deadline).toISOString(),
-      });
+      const fd = new FormData();
+      fd.append('studentUserId', form.studentUserId);
+      fd.append('subjectId', form.subjectId);
+      if (form.bookingId) fd.append('bookingId', form.bookingId);
+      fd.append('title', form.title);
+      fd.append('description', form.description);
+      fd.append('deadline', new Date(form.deadline).toISOString());
+      fd.append('rubric', form.rubric);
+      fd.append('gradingScheme', form.gradingScheme);
+      if (form.gradingScheme === 'marks' && form.maxScore) fd.append('maxScore', form.maxScore);
+      files.forEach((f) => fd.append('attachments', f));
+      await createHomework(fd);
       navigate('/tutor/homework');
     } catch (err) {
       setError(err.message);
@@ -90,7 +121,19 @@ export default function TutorHomeworkFormPage() {
             required
             value={form.studentUserId}
             options={studentOptions(students)}
-            onChange={(e) => setForm((f) => ({ ...f, studentUserId: e.target.value }))}
+            onChange={(e) => setForm((f) => ({ ...f, studentUserId: e.target.value, bookingId: '' }))}
+          />
+          <ErpSelect
+            label="Linked booking (optional)"
+            value={form.bookingId}
+            options={[
+              { value: '', label: 'No booking' },
+              ...studentBookings.map((b) => ({
+                value: b._id,
+                label: `${b.subjectId?.name || 'Lesson'} · ${formatDate(b.startAt)}`,
+              })),
+            ]}
+            onChange={(e) => onBooking(e.target.value)}
           />
           <ErpSelect
             label="Subject"
@@ -102,6 +145,25 @@ export default function TutorHomeworkFormPage() {
             }
             onChange={(e) => setForm((f) => ({ ...f, subjectId: e.target.value }))}
           />
+          <ErpSelect
+            label="Grading scheme"
+            value={form.gradingScheme}
+            options={GRADING_SCHEME_OPTIONS}
+            onChange={(e) => setForm((f) => ({ ...f, gradingScheme: e.target.value }))}
+          />
+          {form.gradingScheme === 'marks' && (
+            <div className="field">
+              <label>Total marks</label>
+              <input
+                className="erp-search"
+                type="number"
+                min="1"
+                required
+                value={form.maxScore}
+                onChange={(e) => setForm((f) => ({ ...f, maxScore: e.target.value }))}
+              />
+            </div>
+          )}
           <div className="field">
             <label>Title</label>
             <input
@@ -121,15 +183,15 @@ export default function TutorHomeworkFormPage() {
               onChange={(e) => setForm((f) => ({ ...f, deadline: e.target.value }))}
             />
           </div>
-          <div className="field">
-            <label>Description</label>
+          <div className="field" style={{ gridColumn: '1 / -1' }}>
+            <label>Instructions</label>
             <textarea
               className="erp-search"
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             />
           </div>
-          <div className="field">
+          <div className="field" style={{ gridColumn: '1 / -1' }}>
             <label>Rubric</label>
             <textarea
               className="erp-search"
@@ -137,7 +199,17 @@ export default function TutorHomeworkFormPage() {
               onChange={(e) => setForm((f) => ({ ...f, rubric: e.target.value }))}
             />
           </div>
-          <div className="row">
+          <div className="field" style={{ gridColumn: '1 / -1' }}>
+            <label>Attachments (worksheets, images, audio, video)</label>
+            <input
+              type="file"
+              multiple
+              accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip"
+              onChange={(e) => setFiles(Array.from(e.target.files || []))}
+            />
+            {files.length > 0 && <div className="muted">{files.map((f) => f.name).join(', ')}</div>}
+          </div>
+          <div className="erp-sticky-actions" style={{ gridColumn: '1 / -1' }}>
             <button className="btn" disabled={saving}>
               {saving ? 'Saving…' : 'Create assignment'}
             </button>

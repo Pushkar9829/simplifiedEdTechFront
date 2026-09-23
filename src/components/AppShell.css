@@ -1,5 +1,23 @@
 /* App shell layout extras — core chrome lives in slate-theme.css */
 
+.erp-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.erp-nav-badge {
+  min-width: 1.25rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--erp-accent, #2563eb);
+  color: #fff;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
 .erp-backdrop {
   display: none;
 }

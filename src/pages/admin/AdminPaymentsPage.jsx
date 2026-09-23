@@ -5,11 +5,13 @@ import {
   ErpCard,
   ErpDataTable,
   ErpModal,
+  ErpPager,
   ErpPageHeader,
+  ErpSearch,
   ErpStatusBadge,
   ErpTabs,
-  ErpToolbar,
 } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 import { formatDate, money } from '../../utils/format';
 import { PAYMENT_STATUS_OPTIONS } from './adminOptions';
 import { useAdminModalQuery } from './useAdminModalQuery';
@@ -39,6 +41,11 @@ export default function AdminPaymentsPage() {
     load();
   }, [status]);
 
+  const list = useListFilter(
+    items,
+    (p) => [p.payerUserId?.name, p.payerUserId?.phone, p.status, p.description].filter(Boolean).join(' '),
+    { resetKey: status }
+  );
   const selected = items.find((p) => p._id === editId) || null;
 
   const setPayStatus = async (id, next) => {
@@ -59,28 +66,30 @@ export default function AdminPaymentsPage() {
       <ErpPageHeader subtitle="Filter by status, then open a payment to mark paid, refund, fail, or reset." />
       {error && <div className="error-banner">{error}</div>}
 
-      <ErpToolbar
-        actions={
+      <div className="avail-bar">
+        <ErpTabs
+          value={status || 'all'}
+          onChange={(value) => setStatus(value === 'all' ? '' : value)}
+          tabs={PAYMENT_STATUS_OPTIONS.map((o) => ({
+            value: o.value || 'all',
+            label: o.value === 'awaiting_confirmation' ? 'Awaiting' : o.label,
+          }))}
+        />
+        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search payments" />
+        <div className="avail-bar-actions">
           <ErpButton variant="secondary" onClick={load}>
             Refresh
           </ErpButton>
-        }
-      />
-
-      <ErpTabs
-        value={status || 'all'}
-        onChange={(value) => setStatus(value === 'all' ? '' : value)}
-        tabs={PAYMENT_STATUS_OPTIONS.map((o) => ({
-          value: o.value || 'all',
-          label: o.value === 'awaiting_confirmation' ? 'Awaiting' : o.label,
-        }))}
-      />
+        </div>
+      </div>
 
       <ErpCard className="erp-card-flush">
         {loading ? (
           <div className="empty">Loading payments…</div>
         ) : !items.length ? (
           <div className="empty">No payments.</div>
+        ) : list.noMatch ? (
+          <div className="empty">No payments match that search.</div>
         ) : (
           <div className="erp-table-scroll">
             <ErpDataTable>
@@ -94,7 +103,7 @@ export default function AdminPaymentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((p) => (
+                {list.items.map((p) => (
                   <tr key={p._id} className="erp-row-click" onClick={() => openEdit(p._id)}>
                     <td>{formatDate(p.createdAt)}</td>
                     <td>{p.payerUserId?.phone || p.payerUserId?.name || '—'}</td>
@@ -119,6 +128,7 @@ export default function AdminPaymentsPage() {
             </ErpDataTable>
           </div>
         )}
+        {list.total > 0 && <ErpPager {...list.pagerProps} noun="payment" />}
       </ErpCard>
 
       <ErpModal

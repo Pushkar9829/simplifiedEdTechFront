@@ -5,9 +5,11 @@ import {
   ErpCard,
   ErpDataTable,
   ErpModal,
+  ErpPager,
   ErpPageHeader,
-  ErpToolbar,
+  ErpSearch,
 } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 import { useAdminModalQuery } from './useAdminModalQuery';
 
 const emptyForm = { key: '', value: '', description: '' };
@@ -142,12 +144,19 @@ export default function AdminConfigsPage() {
     load();
   }, []);
 
+  const list = useListFilter(items, (c) => [c.key, c.value, c.description].filter(Boolean).join(' '));
+
   return (
     <div className="page stack">
       <ErpPageHeader subtitle="Key-value platform settings. Value may be JSON or plain text." />
       {error && <div className="error-banner">{error}</div>}
 
-      <ErpToolbar actions={<ErpButton onClick={openNew}>Create config</ErpButton>} />
+      <div className="avail-bar">
+        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search configs" />
+        <div className="avail-bar-actions">
+          <ErpButton onClick={openNew}>Create config</ErpButton>
+        </div>
+      </div>
 
       <ErpCard className="erp-card-flush">
         {loading ? (
@@ -159,6 +168,8 @@ export default function AdminConfigsPage() {
               Create one
             </button>
           </div>
+        ) : list.noMatch ? (
+          <div className="empty">No configs match that search.</div>
         ) : (
           <div className="erp-table-scroll">
             <ErpDataTable>
@@ -171,7 +182,7 @@ export default function AdminConfigsPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((c) => (
+                {list.items.map((c) => (
                   <tr
                     key={c._id || c.key}
                     className="erp-row-click"
@@ -203,6 +214,7 @@ export default function AdminConfigsPage() {
             </ErpDataTable>
           </div>
         )}
+        {list.total > 0 && <ErpPager {...list.pagerProps} noun="config" />}
       </ErpCard>
 
       <ErpModal open={modalOpen} title={editId ? 'Edit config' : 'Create config'} onClose={close}>

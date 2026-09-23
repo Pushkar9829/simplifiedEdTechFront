@@ -9,19 +9,28 @@ import {
   ErpCard,
   ErpConfirm,
   ErpDataTable,
+  ErpList,
+  ErpListItem,
+  ErpOverflow,
+  ErpPager,
   ErpPageHeader,
+  ErpSearch,
   ErpSelect,
   ErpStatusBadge,
-  ErpToolbar,
+  ErpTabs,
+  useIsPhone,
 } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 import { Link } from 'react-router-dom';
 import { LESSON_STATUS_OPTIONS, titleCase } from './tutorOptions';
 
 export default function TutorLessonPlans() {
+  const phone = useIsPhone();
   const [plans, setPlans] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [tab, setTab] = useState('all');
 
   const load = async () => {
     setLoading(true);
@@ -40,26 +49,89 @@ export default function TutorLessonPlans() {
     load();
   }, []);
 
+  const visible = tab === 'all' ? plans : plans.filter((p) => (p.status || 'draft') === tab);
+  const list = useListFilter(
+    visible,
+    (p) => [p.title, p.objectives, p.subjectId?.name, p.status].filter(Boolean).join(' '),
+    { resetKey: tab }
+  );
+
   return (
     <div className="page stack">
       <ErpPageHeader subtitle="Objectives and status for each lesson plan." />
       {error && <div className="error-banner">{error}</div>}
 
-      <ErpToolbar
-        actions={
+      <div className="avail-bar">
+        <ErpTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'all', label: `All (${plans.length})` },
+            ...LESSON_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+          ]}
+        />
+        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search plans" />
+        <div className="avail-bar-actions">
           <Link to="/tutor/lesson-plans/new" className="erp-btn-primary">
             Create plan
           </Link>
-        }
-      />
+          {plans.length > 0 && (
+            <Link
+              to={`/tutor/courses/new?plans=${plans.map((p) => p._id).join(',')}`}
+              className="erp-btn-secondary"
+            >
+              Launch all as course
+            </Link>
+          )}
+        </div>
+      </div>
 
       <ErpCard className="erp-card-flush">
         {loading ? (
           <div className="empty">Loading plans…</div>
-        ) : !plans.length ? (
+        ) : !visible.length ? (
           <div className="empty">
             No lesson plans yet.{' '}
             <Link to="/tutor/lesson-plans/new">Create your first plan</Link>
+          </div>
+        ) : list.noMatch ? (
+          <div className="empty">No plans match that search.</div>
+        ) : phone ? (
+          <div style={{ padding: '0.65rem' }}>
+            <ErpList>
+              {list.items.map((p) => (
+                <ErpListItem
+                  key={p._id}
+                  title={p.title}
+                  meta={p.subjectId?.name || 'Lesson plan'}
+                  status={p.status || 'draft'}
+                  statusLabel={titleCase(p.status)}
+                  to={`/tutor/lesson-plans/${p._id}/edit`}
+                  actions={
+                    <ErpOverflow
+                      items={[
+                        { label: 'Edit', to: `/tutor/lesson-plans/${p._id}/edit` },
+                        { label: 'Launch as course', to: `/tutor/courses/new?plans=${p._id}` },
+                        ...LESSON_STATUS_OPTIONS.map((opt) => ({
+                          label: `Mark ${opt.label}`,
+                          onClick: async () => {
+                            try {
+                              await updateLessonPlan(p._id, { status: opt.value });
+                              load();
+                            } catch (err) {
+                              setError(err.message);
+                            }
+                          },
+                        })),
+                        { label: 'Delete', danger: true, onClick: () => setPendingDelete(p) },
+                      ]}
+                    />
+                  }
+                >
+                  {p.objectives ? <div className="muted">{p.objectives}</div> : null}
+                </ErpListItem>
+              ))}
+            </ErpList>
           </div>
         ) : (
           <div className="erp-table-scroll">
@@ -73,7 +145,7 @@ export default function TutorLessonPlans() {
                 </tr>
               </thead>
               <tbody>
-                {plans.map((p) => (
+                {list.items.map((p) => (
                   <tr key={p._id}>
                     <td>
                       <strong>{p.title}</strong>
@@ -100,7 +172,16 @@ export default function TutorLessonPlans() {
                         />
                       </div>
                     </td>
-                    <td>
+                    <td className="row">
+                      <Link to={`/tutor/lesson-plans/${p._id}/edit`} className="erp-btn-secondary">
+                        Edit
+                      </Link>
+                      <Link
+                        to={`/tutor/courses/new?plans=${p._id}`}
+                        className="erp-btn-secondary"
+                      >
+                        Launch as course
+                      </Link>
                       <ErpButton variant="danger" onClick={() => setPendingDelete(p)}>
                         Delete
                       </ErpButton>
@@ -111,6 +192,7 @@ export default function TutorLessonPlans() {
             </ErpDataTable>
           </div>
         )}
+        {list.total > 0 && <ErpPager {...list.pagerProps} noun="plan" />}
       </ErpCard>
 
       <ErpConfirm

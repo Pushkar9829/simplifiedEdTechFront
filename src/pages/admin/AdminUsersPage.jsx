@@ -7,10 +7,10 @@ import {
   ErpModal,
   ErpPageHeader,
   ErpPager,
+  ErpSearch,
   ErpSelect,
   ErpStatusBadge,
   ErpTabs,
-  ErpToolbar,
 } from '../../components/erp';
 import { ROLE_OPTIONS, USER_STATUS_OPTIONS, USER_STATUS_SET_OPTIONS } from './adminOptions';
 import { useAdminModalQuery } from './useAdminModalQuery';
@@ -70,22 +70,23 @@ export default function AdminUsersPage() {
       <ErpPageHeader subtitle="Search, filter by status, and change account status." />
       {error && <div className="error-banner">{error}</div>}
 
-      <ErpToolbar>
-        <input
-          className="erp-search"
-          placeholder="Search name or phone"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <ErpButton
-          variant="secondary"
-          onClick={() => {
+      <div className="avail-bar">
+        <ErpTabs
+          value={role || 'all'}
+          onChange={(value) => {
             setPage(1);
-            load();
+            setRole(value === 'all' ? '' : value);
           }}
-        >
-          Search
-        </ErpButton>
+          tabs={ROLE_OPTIONS.map((o) => ({
+            value: o.value || 'all',
+            label: o.label,
+          }))}
+        />
+        <ErpSearch
+          value={search}
+          onChange={setSearch}
+          placeholder="Search name or phone"
+        />
         <ErpSelect
           inline
           value={status}
@@ -95,19 +96,18 @@ export default function AdminUsersPage() {
             setStatus(e.target.value);
           }}
         />
-      </ErpToolbar>
-
-      <ErpTabs
-        value={role || 'all'}
-        onChange={(value) => {
-          setPage(1);
-          setRole(value === 'all' ? '' : value);
-        }}
-        tabs={ROLE_OPTIONS.map((o) => ({
-          value: o.value || 'all',
-          label: o.label,
-        }))}
-      />
+        <div className="avail-bar-actions">
+          <ErpButton
+            variant="secondary"
+            onClick={() => {
+              setPage(1);
+              load();
+            }}
+          >
+            Search
+          </ErpButton>
+        </div>
+      </div>
 
       <ErpCard className="erp-card-flush">
         {loading ? (

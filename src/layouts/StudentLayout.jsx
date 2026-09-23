@@ -8,6 +8,8 @@ const links = [
   { to: '/student/bookings', label: 'Bookings' },
   { to: '/student/resources', label: 'Resources' },
   { to: '/student/homework', label: 'Homework' },
+  { to: '/student/projects', label: 'Projects' },
+  { to: '/student/courses', label: 'Courses' },
   { to: '/student/progress', label: 'Progress' },
   { to: '/student/payments', label: 'Payments' },
   { to: '/student/wallet', label: 'Wallet' },

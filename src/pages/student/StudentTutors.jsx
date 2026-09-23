@@ -4,9 +4,11 @@ import { listBoards, listClassLevels, listSubjects, searchTutors } from '../../a
 import {
   ErpButton,
   ErpModal,
+  ErpPager,
   ErpPageHeader,
+  ErpSearch,
   ErpSelect,
-  ErpToolbar,
+  ErpTabs,
 } from '../../components/erp';
 import { money } from '../../utils/format';
 import {
@@ -17,7 +19,10 @@ import {
   titleCase,
 } from './studentOptions';
 
+const PAGE_SIZE = 12;
+
 const emptyFilters = {
+  search: '',
   subjectId: '',
   level: '',
   language: '',
@@ -40,17 +45,20 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
   const [classLevels, setClassLevels] = useState([]);
   const [filters, setFilters] = useState(emptyFilters);
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const load = async (nextFilters = filters) => {
+  const load = async (nextFilters = filters, nextPage = page) => {
     setLoading(true);
     setError('');
     try {
-      const data = await searchTutors(nextFilters);
+      const data = await searchTutors({ ...nextFilters, page: nextPage, limit: PAGE_SIZE });
       setItems(data.items || []);
+      setTotal(data.total || 0);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -76,28 +84,21 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
       <ErpPageHeader subtitle="Search verified tutors. Use mode to switch online (Zoom) or offline." />
       {error && <div className="error-banner">{error}</div>}
 
-      <ErpToolbar
-        actions={
-          <>
-            <ErpButton variant="secondary" type="button" onClick={() => setMoreOpen(true)}>
-              More filters
-            </ErpButton>
-            <ErpButton
-              variant="secondary"
-              type="button"
-              onClick={() => {
-                setFilters(emptyFilters);
-                load(emptyFilters);
-              }}
-            >
-              Reset
-            </ErpButton>
-            <ErpButton type="button" onClick={() => load()}>
-              Apply
-            </ErpButton>
-          </>
-        }
-      >
+      <div className="avail-bar">
+        <ErpTabs
+          value={filters.mode || 'all'}
+          onChange={(value) => setFilters((f) => ({ ...f, mode: value === 'all' ? '' : value }))}
+          tabs={[
+            { value: 'all', label: 'All' },
+            { value: 'online', label: 'Online' },
+            { value: 'offline', label: 'Offline' },
+          ]}
+        />
+        <ErpSearch
+          value={filters.search}
+          onChange={(value) => setFilters((f) => ({ ...f, search: value }))}
+          placeholder="Search tutor name"
+        />
         <ErpSelect
           inline
           value={filters.subjectId}
@@ -110,13 +111,32 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
           options={LEVEL_FILTER_OPTIONS}
           onChange={set('level')}
         />
-        <ErpSelect
-          inline
-          value={filters.mode}
-          options={MODE_FILTER_OPTIONS}
-          onChange={set('mode')}
-        />
-      </ErpToolbar>
+        <div className="avail-bar-actions">
+          <ErpButton variant="secondary" type="button" onClick={() => setMoreOpen(true)}>
+            More filters
+          </ErpButton>
+          <ErpButton
+            variant="secondary"
+            type="button"
+            onClick={() => {
+              setFilters(emptyFilters);
+              setPage(1);
+              load(emptyFilters, 1);
+            }}
+          >
+            Reset
+          </ErpButton>
+          <ErpButton
+            type="button"
+            onClick={() => {
+              setPage(1);
+              load(filters, 1);
+            }}
+          >
+            Apply
+          </ErpButton>
+        </div>
+      </div>
 
       <ErpModal
         open={moreOpen}
@@ -275,6 +295,24 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
             );
           })}
         </div>
+      )}
+      {total > 0 && (
+        <ErpPager
+          page={page}
+          pages={Math.max(1, Math.ceil(total / PAGE_SIZE))}
+          total={total}
+          noun="tutor"
+          onPrev={() => {
+            const next = page - 1;
+            setPage(next);
+            load(filters, next);
+          }}
+          onNext={() => {
+            const next = page + 1;
+            setPage(next);
+            load(filters, next);
+          }}
+        />
       )}
     </div>
   );

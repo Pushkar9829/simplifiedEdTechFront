@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { listChildren } from '../../api';
 import { titleCase } from './parentOptions';
+import { ErpPager, ErpSearch } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 
 export default function ParentChildrenPage() {
   const navigate = useNavigate();
@@ -16,6 +18,10 @@ export default function ParentChildrenPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const list = useListFilter(children, (c) =>
+    [c.studentUserId?.name, c.studentUserId?.phone, c.relationship, c.status].filter(Boolean).join(' ')
+  );
+
   return (
     <div className="page stack">
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -26,6 +32,14 @@ export default function ParentChildrenPage() {
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+      <div className="avail-bar">
+        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search children" />
+        <div className="avail-bar-actions">
+          <Link to="/parent/children/link" className="erp-btn-primary">
+            Link child
+          </Link>
+        </div>
+      </div>
 
       <div className="erp-card">
         {loading ? (
@@ -35,6 +49,8 @@ export default function ParentChildrenPage() {
             No linked children.{' '}
             <Link to="/parent/children/link">Link your first child</Link>
           </div>
+        ) : list.noMatch ? (
+          <div className="empty">No children match that search.</div>
         ) : (
           <table className="erp-data-table table">
             <thead>
@@ -47,7 +63,7 @@ export default function ParentChildrenPage() {
               </tr>
             </thead>
             <tbody>
-              {children.map((c) => (
+              {list.items.map((c) => (
                 <tr key={c._id}>
                   <td>
                     <strong>{c.studentUserId?.name || '—'}</strong>
@@ -69,6 +85,7 @@ export default function ParentChildrenPage() {
             </tbody>
           </table>
         )}
+        {list.total > 0 && <ErpPager {...list.pagerProps} noun="child" />}
       </div>
     </div>
   );

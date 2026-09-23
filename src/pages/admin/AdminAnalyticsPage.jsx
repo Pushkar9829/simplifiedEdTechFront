@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { analyticsOverview, analyticsTutor, analyticsTutors } from '../../api';
-import { ErpButton, ErpModal, ErpPageHeader, ErpTabs, ErpToolbar } from '../../components/erp';
+import { ErpButton, ErpModal, ErpPageHeader, ErpTabs } from '../../components/erp';
 import { formatDate, money } from '../../utils/format';
 import { titleCase } from './adminOptions';
 import './AdminAnalytics.css';
@@ -134,16 +134,22 @@ export default function AdminAnalyticsPage() {
   return (
     <div className="page stack analytics-page">
       <ErpPageHeader subtitle="Live aggregates + admin-fed campaign metrics" />
-      <ErpToolbar actions={<ErpButton variant="secondary" onClick={refresh}>Refresh</ErpButton>} />
-      <ErpTabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { value: 'overview', label: 'Overview' },
-          { value: 'tutors', label: 'Tutors' },
-          { value: 'campaigns', label: 'Campaigns' },
-        ]}
-      />
+      <div className="avail-bar">
+        <ErpTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'overview', label: 'Overview' },
+            { value: 'tutors', label: 'Tutors' },
+            { value: 'campaigns', label: 'Campaigns' },
+          ]}
+        />
+        <div className="avail-bar-actions">
+          <ErpButton variant="secondary" onClick={refresh}>
+            Refresh
+          </ErpButton>
+        </div>
+      </div>
 
       {tab === 'overview' && (
         <>

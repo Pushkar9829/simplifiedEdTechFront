@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listSubjects, selectSubjects } from '../../api';
 import { useAuth } from '../../context/AuthContext';
+import { ErpPager, ErpSearch } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 
 export default function StudentSubjects() {
   const { profile, refresh } = useAuth();
@@ -43,6 +45,8 @@ export default function StudentSubjects() {
     }
   };
 
+  const list = useListFilter(subjects, (s) => [s.name, s.code].filter(Boolean).join(' '));
+
   return (
     <div className="page stack">
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -60,11 +64,22 @@ export default function StudentSubjects() {
       {msg && <div className="success-banner">{msg}</div>}
       {error && <div className="error-banner">{error}</div>}
 
+      <div className="avail-bar">
+        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search subjects" />
+        <div className="avail-bar-actions">
+          <Link to="/student/tutors" className="erp-btn-secondary">
+            Find tutors
+          </Link>
+        </div>
+      </div>
+
       {loading ? (
         <div className="erp-card empty">Loading subjects…</div>
+      ) : list.noMatch ? (
+        <div className="erp-card empty">No subjects match that search.</div>
       ) : (
         <div className="erp-card grid two">
-          {subjects.map((s) => (
+          {list.items.map((s) => (
             <label key={s._id} className="row" style={{ gap: '0.45rem' }}>
               <input
                 type="checkbox"
@@ -80,6 +95,7 @@ export default function StudentSubjects() {
           {!subjects.length && <div className="empty">No subjects available.</div>}
         </div>
       )}
+      {list.total > 0 && <ErpPager {...list.pagerProps} noun="subject" />}
 
       <div className="row">
         <button className="btn" type="button" onClick={save} disabled={saving}>

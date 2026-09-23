@@ -5,11 +5,13 @@ import {
   ErpCard,
   ErpDataTable,
   ErpModal,
+  ErpPager,
   ErpPageHeader,
+  ErpSearch,
   ErpStatusBadge,
   ErpTabs,
-  ErpToolbar,
 } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 import { useAdminModalQuery } from './useAdminModalQuery';
 
 const emptyForm = {
@@ -197,27 +199,32 @@ export default function AdminSubjectsPage() {
     if (tab === 'inactive') return items.filter((s) => s.isActive === false);
     return items;
   }, [items, tab]);
+  const list = useListFilter(
+    visible,
+    (s) => [s.name, s.code, s.category, s.description].filter(Boolean).join(' '),
+    { resetKey: tab }
+  );
 
   return (
     <div className="page stack">
       <ErpPageHeader subtitle="IBDP subjects used across tutors, resources, and bookings." />
       {error && <div className="error-banner">{error}</div>}
 
-      <ErpToolbar
-        actions={
+      <div className="avail-bar">
+        <ErpTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'all', label: `All (${items.length})` },
+            { value: 'active', label: 'Active' },
+            { value: 'inactive', label: 'Inactive' },
+          ]}
+        />
+        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search subjects" />
+        <div className="avail-bar-actions">
           <ErpButton onClick={openNew}>Create subject</ErpButton>
-        }
-      />
-
-      <ErpTabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { value: 'all', label: `All (${items.length})` },
-          { value: 'active', label: 'Active' },
-          { value: 'inactive', label: 'Inactive' },
-        ]}
-      />
+        </div>
+      </div>
 
       <ErpCard className="erp-card-flush">
         {loading ? (
@@ -229,6 +236,8 @@ export default function AdminSubjectsPage() {
               Create your first subject
             </button>
           </div>
+        ) : list.noMatch ? (
+          <div className="empty">No subjects match that search.</div>
         ) : (
           <div className="erp-table-scroll">
             <ErpDataTable>
@@ -243,7 +252,7 @@ export default function AdminSubjectsPage() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((s) => (
+                {list.items.map((s) => (
                   <tr key={s._id} className="erp-row-click" onClick={() => openEdit(s._id)}>
                     <td>
                       <strong>{s.name}</strong>
@@ -274,6 +283,7 @@ export default function AdminSubjectsPage() {
             </ErpDataTable>
           </div>
         )}
+        {list.total > 0 && <ErpPager {...list.pagerProps} noun="subject" />}
       </ErpCard>
 
       <ErpModal

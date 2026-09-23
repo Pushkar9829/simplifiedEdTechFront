@@ -5,10 +5,12 @@ import {
   ErpCard,
   ErpDataTable,
   ErpModal,
+  ErpPager,
   ErpPageHeader,
+  ErpSearch,
   ErpSelect,
-  ErpToolbar,
 } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 import { money } from '../../utils/format';
 import { CAMPAIGN_CHANNEL_OPTIONS } from './adminOptions';
 import { useAdminModalQuery } from './useAdminModalQuery';
@@ -228,12 +230,19 @@ export default function AdminCampaignsPage() {
     load();
   }, []);
 
+  const list = useListFilter(items, (c) => [c.name, c.channel, c.notes].filter(Boolean).join(' '));
+
   return (
     <div className="page stack">
       <ErpPageHeader subtitle="Admin-fed marketing spend, leads, and conversions." />
       {error && <div className="error-banner">{error}</div>}
 
-      <ErpToolbar actions={<ErpButton onClick={openNew}>Create campaign</ErpButton>} />
+      <div className="avail-bar">
+        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search campaigns" />
+        <div className="avail-bar-actions">
+          <ErpButton onClick={openNew}>Create campaign</ErpButton>
+        </div>
+      </div>
 
       <ErpCard className="erp-card-flush">
         {loading ? (
@@ -245,6 +254,8 @@ export default function AdminCampaignsPage() {
               Create your first campaign
             </button>
           </div>
+        ) : list.noMatch ? (
+          <div className="empty">No campaigns match that search.</div>
         ) : (
           <div className="erp-table-scroll">
             <ErpDataTable>
@@ -259,7 +270,7 @@ export default function AdminCampaignsPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((c) => (
+                {list.items.map((c) => (
                   <tr key={c._id} className="erp-row-click" onClick={() => openEdit(c._id)}>
                     <td>
                       <strong>{c.name}</strong>
@@ -286,6 +297,7 @@ export default function AdminCampaignsPage() {
             </ErpDataTable>
           </div>
         )}
+        {list.total > 0 && <ErpPager {...list.pagerProps} noun="campaign" />}
       </ErpCard>
 
       <ErpModal

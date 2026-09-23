@@ -6,6 +6,7 @@ const links = [
   { to: '/parent/children', label: 'Children' },
   { to: '/parent/tutors', label: 'Find tutors' },
   { to: '/parent/bookings', label: 'Bookings' },
+  { to: '/parent/projects', label: 'Projects' },
   { to: '/parent/payments', label: 'Payments' },
   { to: '/parent/wallet', label: 'Wallet' },
   { to: '/parent/messages', label: 'Messages' },

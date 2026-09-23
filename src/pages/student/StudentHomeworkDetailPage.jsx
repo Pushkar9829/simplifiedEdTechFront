@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getHomework, submitHomework } from '../../api';
 import { formatDate, statusBadge } from '../../utils/format';
-import { mediaUrl } from '../../utils/mediaUrl';
+import { gradeLabel, schemeLabel } from '../../utils/grading';
+import { mediaName, mediaUrl } from '../../utils/mediaUrl';
 import { titleCase } from './studentOptions';
 
 export default function StudentHomeworkDetailPage() {
@@ -69,14 +70,28 @@ export default function StudentHomeworkDetailPage() {
           <p>{a.description || 'No description.'}</p>
           <p className="muted">Rubric: {a.rubric || '—'}</p>
           <p className="muted">
-            Subject: {a.subjectId?.name || '—'} · Tutor:{' '}
-            {a.tutorUserId?.name || '—'}
+            Subject: {a.subjectId?.name || '—'} · Tutor: {a.tutorUserId?.name || '—'} ·{' '}
+            {schemeLabel(a.gradingScheme)}
           </p>
+          {!!a.attachments?.length && (
+            <div>
+              <strong>Files from your tutor</strong>
+              <ul>
+                {a.attachments.map((f) => (
+                  <li key={f.url}>
+                    <a className="erp-link" href={mediaUrl(f.url)} target="_blank" rel="noreferrer">
+                      {f.name || f.url}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {s && (
             <div>
               <h3>Current submission</h3>
               <p>
-                Grade: <strong>{s.grade || 'Pending'}</strong>
+                Grade: <strong>{s.grade ? gradeLabel(s.grade) : 'Pending'}</strong>
               </p>
               <p>Feedback: {s.feedback || '—'}</p>
               {s.notes && <p className="muted">Notes: {s.notes}</p>}
@@ -84,10 +99,10 @@ export default function StudentHomeworkDetailPage() {
                 <p>
                   Files:{' '}
                   {s.files.map((f, i) => (
-                    <span key={`${f}-${i}`}>
+                    <span key={`${mediaUrl(f) || i}-${i}`}>
                       {i > 0 ? ', ' : ''}
                       <a className="erp-link" href={mediaUrl(f)} target="_blank" rel="noreferrer">
-                        {String(f).split('/').pop()}
+                        {mediaName(f)}
                       </a>
                     </span>
                   ))}

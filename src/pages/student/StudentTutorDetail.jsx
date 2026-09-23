@@ -3,7 +3,9 @@ import { Link, useParams } from 'react-router-dom';
 import {
   addTutorReview,
   createBooking,
+  enrollCourse,
   getTutor,
+  listCourses,
 } from '../../api';
 import { ErpSelect } from '../../components/erp';
 import { money } from '../../utils/format';
@@ -36,6 +38,7 @@ export default function StudentTutorDetail({
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [booking, setBooking] = useState(false);
+  const [courses, setCourses] = useState([]);
 
   const load = async () => {
     const t = await getTutor(id);
@@ -46,6 +49,8 @@ export default function StudentTutorDetail({
     }
     const free = (t.availability || []).find((s) => !s.isBooked);
     setSlotId(free?._id || '');
+    const published = await listCourses({ tutorUserId: id });
+    setCourses(Array.isArray(published) ? published : published.items || []);
   };
 
   useEffect(() => {
@@ -130,10 +135,44 @@ export default function StudentTutorDetail({
           <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
             {(data.subjects || []).map((s) => (
               <li key={s._id}>
-                {s.subjectId?.name} ({s.level}) · {money(s.hourlyRate || p.hourlyRate)}/hr
+                {s.subjectId?.name} ({s.level})
+                {s.boardId?.name ? ` · ${s.boardId.name}` : ''}
+                {s.classLevelId?.name ? ` · ${s.classLevelId.name}` : ''}
+                {s.countryId?.name ? ` · ${s.countryId.name}` : ''} · Online{' '}
+                {money(s.onlineRate || s.hourlyRate || p.hourlyRate, s.currency || p.currency)}/hr · Offline{' '}
+                {money(s.offlineRate || s.hourlyRate || p.hourlyRate, s.currency || p.currency)}/hr
               </li>
             ))}
           </ul>
+
+          {courses.length > 0 && (
+            <>
+              <h3>Courses</h3>
+              {courses.map((c) => (
+                <div key={c._id} className="erp-card-sm stack">
+                  <strong>{c.title}</strong>
+                  <span className="muted">
+                    {c.subjectId?.name} · {c.price ? money(c.price, c.currency) : 'Free'} ·{' '}
+                    {c.lessonPlanIds?.length || 0} lessons
+                  </span>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await enrollCourse(c._id, studentUserId ? { studentUserId } : {});
+                        setMsg('Enrollment created. Pay the invoice to start.');
+                      } catch (err) {
+                        setError(err.message);
+                      }
+                    }}
+                  >
+                    Enroll
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
 
           {(data.videos || []).length > 0 && (
             <>

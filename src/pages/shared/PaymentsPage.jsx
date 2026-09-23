@@ -3,6 +3,8 @@ import { Link, useLocation } from 'react-router-dom';
 import { getMyWallet, listPayable, listPlans, payInvoice, paymentHistory, subscribePlan } from '../../api';
 import { formatDate, money, statusBadge } from '../../utils/format';
 import { titleCase } from '../admin/adminOptions';
+import { ErpPager, ErpSearch, ErpTabs } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 
 export default function PaymentsPage({ showPlans = true }) {
   const location = useLocation();
@@ -14,6 +16,7 @@ export default function PaymentsPage({ showPlans = true }) {
   const [error, setError] = useState('');
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('due');
 
   const load = async () => {
     setLoading(true);
@@ -40,6 +43,8 @@ export default function PaymentsPage({ showPlans = true }) {
     load();
   }, [showPlans]);
 
+  const dueList = useListFilter(payable, (p) => [p.description, p.status].filter(Boolean).join(' '));
+  const histList = useListFilter(history, (p) => [p.description, p.status].filter(Boolean).join(' '));
   const pendingTotal = payable
     .filter((p) => ['pending', 'failed', 'awaiting_confirmation'].includes(p.status))
     .reduce((s, p) => s + (p.amount || 0), 0);
@@ -70,12 +75,39 @@ export default function PaymentsPage({ showPlans = true }) {
         </div>
       </div>
 
+      <div className="avail-bar">
+        <ErpTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'due', label: `Pay now (${payable.length})` },
+            ...(showPlans ? [{ value: 'plans', label: 'Plans' }] : []),
+            { value: 'history', label: 'History' },
+          ]}
+        />
+        {tab !== 'plans' && (
+          <ErpSearch
+            value={tab === 'history' ? histList.search : dueList.search}
+            onChange={tab === 'history' ? histList.setSearch : dueList.setSearch}
+            placeholder={tab === 'history' ? 'Search history' : 'Search invoices'}
+          />
+        )}
+        <div className="avail-bar-actions">
+          <Link to={walletPath} className="erp-btn-secondary">
+            Open wallet
+          </Link>
+        </div>
+      </div>
+
+      {tab === 'due' && (
       <section className="erp-card">
         <h2>Pay now</h2>
         {loading ? (
           <div className="empty">Loading…</div>
         ) : !payable.length ? (
           <div className="empty">No payable invoices.</div>
+        ) : dueList.noMatch ? (
+          <div className="empty">No invoices match that search.</div>
         ) : (
           <table className="erp-data-table table">
             <thead>
@@ -87,7 +119,7 @@ export default function PaymentsPage({ showPlans = true }) {
               </tr>
             </thead>
             <tbody>
-              {payable.map((p) => (
+              {dueList.items.map((p) => (
                 <tr key={p._id}>
                   <td>{p.description || 'Invoice'}</td>
                   <td>{money(p.amount, p.currency)}</td>
@@ -137,9 +169,11 @@ export default function PaymentsPage({ showPlans = true }) {
             </tbody>
           </table>
         )}
+        {dueList.total > 0 && <ErpPager {...dueList.pagerProps} noun="invoice" />}
       </section>
+      )}
 
-      {showPlans && (
+      {tab === 'plans' && showPlans && (
         <section className="erp-card stack">
           <h2>Subscription plans</h2>
           {!plans.length ? (
@@ -183,12 +217,15 @@ export default function PaymentsPage({ showPlans = true }) {
         </section>
       )}
 
+      {tab === 'history' && (
       <section className="erp-card">
         <h2>History</h2>
         {loading ? (
           <div className="empty">Loading…</div>
         ) : !history.length ? (
           <div className="empty">No payment history.</div>
+        ) : histList.noMatch ? (
+          <div className="empty">No payments match that search.</div>
         ) : (
           <table className="erp-data-table table">
             <thead>
@@ -200,7 +237,7 @@ export default function PaymentsPage({ showPlans = true }) {
               </tr>
             </thead>
             <tbody>
-              {history.map((p) => (
+              {histList.items.map((p) => (
                 <tr key={p._id}>
                   <td>{formatDate(p.createdAt)}</td>
                   <td>{p.description || '—'}</td>
@@ -213,7 +250,9 @@ export default function PaymentsPage({ showPlans = true }) {
             </tbody>
           </table>
         )}
+        {histList.total > 0 && <ErpPager {...histList.pagerProps} noun="payment" />}
       </section>
+      )}
     </div>
   );
 }

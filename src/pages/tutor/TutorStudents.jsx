@@ -11,14 +11,20 @@ import {
   ErpCard,
   ErpConfirm,
   ErpDataTable,
+  ErpList,
+  ErpListItem,
+  ErpPager,
   ErpPageHeader,
+  ErpSearch,
   ErpSelect,
   ErpTabs,
-  ErpToolbar,
+  useIsPhone,
 } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 import { studentOptions } from './tutorOptions';
 
 export default function TutorStudents() {
+  const phone = useIsPhone();
   const [tab, setTab] = useState('notes');
   const [students, setStudents] = useState([]);
   const [selected, setSelected] = useState('');
@@ -55,6 +61,9 @@ export default function TutorStudents() {
       .catch((err) => setError(err.message));
   }, [selected]);
 
+  const studentList = useListFilter(students, (s) => [s.name, s.phone].filter(Boolean).join(' '));
+  const noteList = useListFilter(notes, (n) => n.note || '', { resetKey: selected });
+
   return (
     <div className="page stack">
       <ErpPageHeader subtitle="Notes and progress for students from your bookings." />
@@ -70,23 +79,50 @@ export default function TutorStudents() {
         </ErpCard>
       ) : (
         <>
-          <ErpToolbar>
-            <ErpSelect
-              inline
-              value={selected}
-              options={studentOptions(students).filter((o) => o.value)}
-              onChange={(e) => setSelected(e.target.value)}
+          <div className="avail-bar">
+            <ErpTabs
+              value={tab}
+              onChange={setTab}
+              tabs={[
+                { value: 'notes', label: `Notes (${notes.length})` },
+                { value: 'progress', label: 'Progress' },
+              ]}
             />
-          </ErpToolbar>
-
-          <ErpTabs
-            value={tab}
-            onChange={setTab}
-            tabs={[
-              { value: 'notes', label: `Notes (${notes.length})` },
-              { value: 'progress', label: 'Progress' },
-            ]}
-          />
+            <ErpSearch
+              value={studentList.search}
+              onChange={studentList.setSearch}
+              placeholder="Search students"
+            />
+            {!phone && (
+              <ErpSelect
+                inline
+                value={selected}
+                options={studentOptions(studentList.search ? studentList.items : students).filter((o) => o.value)}
+                onChange={(e) => setSelected(e.target.value)}
+              />
+            )}
+          </div>
+          {phone && (
+            <>
+              {studentList.noMatch ? (
+                <div className="empty">No students match that search.</div>
+              ) : (
+                <ErpList>
+                  {studentList.items.map((s) => (
+                    <ErpListItem
+                      key={s._id}
+                      title={s.name || s.phone || 'Student'}
+                      meta={s.phone || ''}
+                      onClick={() => setSelected(s._id)}
+                      status={selected === s._id ? 'active' : undefined}
+                      statusLabel={selected === s._id ? 'Selected' : undefined}
+                    />
+                  ))}
+                </ErpList>
+              )}
+              {studentList.total > 0 && <ErpPager {...studentList.pagerProps} noun="student" />}
+            </>
+          )}
 
           {tab === 'notes' ? (
             <ErpCard className="erp-card-flush">
@@ -119,8 +155,31 @@ export default function TutorStudents() {
                   </ErpButton>
                 </div>
               </div>
+              <div className="erp-toolbar">
+                <div className="erp-toolbar-left">
+                  <ErpSearch value={noteList.search} onChange={noteList.setSearch} placeholder="Search notes" />
+                </div>
+              </div>
               {!notes.length ? (
                 <div className="empty">No notes yet.</div>
+              ) : noteList.noMatch ? (
+                <div className="empty">No notes match that search.</div>
+              ) : phone ? (
+                <div style={{ padding: '0.65rem' }}>
+                  <ErpList>
+                    {noteList.items.map((n) => (
+                      <ErpListItem
+                        key={n._id}
+                        title={n.note}
+                        actions={
+                          <ErpButton variant="danger" onClick={() => setPendingDelete(n)}>
+                            Delete
+                          </ErpButton>
+                        }
+                      />
+                    ))}
+                  </ErpList>
+                </div>
               ) : (
                 <div className="erp-table-scroll">
                   <ErpDataTable>
@@ -131,8 +190,8 @@ export default function TutorStudents() {
                       </tr>
                     </thead>
                     <tbody>
-                      {notes.map((n) => (
-                        <tr key={n._id}>
+                    {noteList.items.map((n) => (
+                      <tr key={n._id}>
                           <td>{n.note}</td>
                           <td>
                             <ErpButton variant="danger" onClick={() => setPendingDelete(n)}>
@@ -145,6 +204,7 @@ export default function TutorStudents() {
                   </ErpDataTable>
                 </div>
               )}
+              {noteList.total > 0 && <ErpPager {...noteList.pagerProps} noun="note" />}
             </ErpCard>
           ) : (
             <div className="grid two">

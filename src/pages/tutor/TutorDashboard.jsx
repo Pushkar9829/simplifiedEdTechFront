@@ -145,12 +145,21 @@ export default function TutorDashboard() {
             </Link>
           </div>
           {stats.upcoming.slice(0, 6).map((b) => (
-            <div key={b._id} className="row" style={{ justifyContent: 'space-between' }}>
-              <span>
-                {b.subjectId?.name} with {b.studentUserId?.name || b.studentUserId?.phone}
-              </span>
-              <span className="muted">{formatDate(b.startAt)}</span>
-            </div>
+            <Link
+              key={b._id}
+              to="/tutor/bookings"
+              className="erp-list-item"
+              style={{ boxShadow: 'none' }}
+            >
+              <div className="erp-list-main">
+                <div className="erp-list-title-row">
+                  <strong>{b.studentUserId?.name || b.studentUserId?.phone || 'Student'}</strong>
+                </div>
+                <p className="erp-list-meta">
+                  {b.subjectId?.name || 'Lesson'} · {formatDate(b.startAt)}
+                </p>
+              </div>
+            </Link>
           ))}
           {!stats.upcoming.length && <div className="empty">No upcoming classes.</div>}
         </section>

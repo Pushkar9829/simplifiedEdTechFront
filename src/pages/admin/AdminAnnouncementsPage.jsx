@@ -5,12 +5,14 @@ import {
   ErpCard,
   ErpDataTable,
   ErpModal,
+  ErpPager,
   ErpPageHeader,
+  ErpSearch,
   ErpSelect,
   ErpStatusBadge,
   ErpTabs,
-  ErpToolbar,
 } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 import { formatDate } from '../../utils/format';
 import { AUDIENCE_OPTIONS } from './adminOptions';
 import { useAdminModalQuery } from './useAdminModalQuery';
@@ -161,23 +163,30 @@ export default function AdminAnnouncementsPage() {
     if (tab === 'inactive') return items.filter((a) => a.isActive === false);
     return items;
   }, [items, tab]);
+  const list = useListFilter(visible, (a) => [a.title, a.body, a.audience].filter(Boolean).join(' '), {
+    resetKey: tab,
+  });
 
   return (
     <div className="page stack">
       <ErpPageHeader subtitle="Platform-wide notices shown to selected audiences." />
       {error && <div className="error-banner">{error}</div>}
 
-      <ErpToolbar actions={<ErpButton onClick={openNew}>Create announcement</ErpButton>} />
-
-      <ErpTabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { value: 'all', label: `All (${items.length})` },
-          { value: 'active', label: 'Active' },
-          { value: 'inactive', label: 'Inactive' },
-        ]}
-      />
+      <div className="avail-bar">
+        <ErpTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'all', label: `All (${items.length})` },
+            { value: 'active', label: 'Active' },
+            { value: 'inactive', label: 'Inactive' },
+          ]}
+        />
+        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search announcements" />
+        <div className="avail-bar-actions">
+          <ErpButton onClick={openNew}>Create announcement</ErpButton>
+        </div>
+      </div>
 
       <ErpCard className="erp-card-flush">
         {loading ? (
@@ -189,6 +198,8 @@ export default function AdminAnnouncementsPage() {
               Create one
             </button>
           </div>
+        ) : list.noMatch ? (
+          <div className="empty">No announcements match that search.</div>
         ) : (
           <div className="erp-table-scroll">
             <ErpDataTable>
@@ -202,7 +213,7 @@ export default function AdminAnnouncementsPage() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((a) => (
+                {list.items.map((a) => (
                   <tr key={a._id} className="erp-row-click" onClick={() => openEdit(a._id)}>
                     <td>
                       <strong>{a.title}</strong>
@@ -232,6 +243,7 @@ export default function AdminAnnouncementsPage() {
             </ErpDataTable>
           </div>
         )}
+        {list.total > 0 && <ErpPager {...list.pagerProps} noun="announcement" />}
       </ErpCard>
 
       <ErpModal

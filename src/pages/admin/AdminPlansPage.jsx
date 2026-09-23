@@ -5,12 +5,14 @@ import {
   ErpCard,
   ErpDataTable,
   ErpModal,
+  ErpPager,
   ErpPageHeader,
+  ErpSearch,
   ErpSelect,
   ErpStatusBadge,
   ErpTabs,
-  ErpToolbar,
 } from '../../components/erp';
+import { useListFilter } from '../../hooks/useListFilter';
 import { money } from '../../utils/format';
 import { BILLING_CYCLE_OPTIONS } from './adminOptions';
 import { useAdminModalQuery } from './useAdminModalQuery';
@@ -204,23 +206,30 @@ export default function AdminPlansPage() {
     if (tab === 'inactive') return items.filter((p) => !p.isActive);
     return items;
   }, [items, tab]);
+  const list = useListFilter(visible, (p) => [p.name, p.description, p.billingCycle].filter(Boolean).join(' '), {
+    resetKey: tab,
+  });
 
   return (
     <div className="page stack">
       <ErpPageHeader subtitle="Subscription plans sold to students and parents." />
       {error && <div className="error-banner">{error}</div>}
 
-      <ErpToolbar actions={<ErpButton onClick={openNew}>Create plan</ErpButton>} />
-
-      <ErpTabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { value: 'all', label: `All (${items.length})` },
-          { value: 'active', label: 'Active' },
-          { value: 'inactive', label: 'Inactive' },
-        ]}
-      />
+      <div className="avail-bar">
+        <ErpTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'all', label: `All (${items.length})` },
+            { value: 'active', label: 'Active' },
+            { value: 'inactive', label: 'Inactive' },
+          ]}
+        />
+        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search plans" />
+        <div className="avail-bar-actions">
+          <ErpButton onClick={openNew}>Create plan</ErpButton>
+        </div>
+      </div>
 
       <ErpCard className="erp-card-flush">
         {loading ? (
@@ -232,6 +241,8 @@ export default function AdminPlansPage() {
               Create your first plan
             </button>
           </div>
+        ) : list.noMatch ? (
+          <div className="empty">No plans match that search.</div>
         ) : (
           <div className="erp-table-scroll">
             <ErpDataTable>
@@ -245,7 +256,7 @@ export default function AdminPlansPage() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((p) => (
+                {list.items.map((p) => (
                   <tr key={p._id} className="erp-row-click" onClick={() => openEdit(p._id)}>
                     <td>
                       <strong>{p.name}</strong>
@@ -275,6 +286,7 @@ export default function AdminPlansPage() {
             </ErpDataTable>
           </div>
         )}
+        {list.total > 0 && <ErpPager {...list.pagerProps} noun="plan" />}
       </ErpCard>
 
       <ErpModal open={modalOpen} title={editId ? 'Edit plan' : 'Create plan'} onClose={close}>
