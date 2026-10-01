@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getStudentDashboard } from '../../api';
 import { ErpPageHeader } from '../../components/erp';
-import { formatDate, statusBadge } from '../../utils/format';
+import { formatInZone, statusBadge, tutorRef } from '../../utils/format';
 import { titleCase } from './studentOptions';
 
 export default function StudentDashboard() {
@@ -35,6 +35,18 @@ export default function StudentDashboard() {
         <div className="stat">
           <div className="label">Study streak</div>
           <div className="value">{data.studyStreak || 0}</div>
+        </div>
+        <div className="stat">
+          <div className="label">Credits</div>
+          <div className="value">{data.credits || 0}</div>
+        </div>
+        <div className="stat">
+          <div className="label">Stars</div>
+          <div className="value">{'★'.repeat(data.stars || 0) || '—'}</div>
+        </div>
+        <div className="stat">
+          <div className="label">Level</div>
+          <div className="value">{data.level || 'Starter'}</div>
         </div>
         <div className="stat">
           <div className="label">Upcoming classes</div>
@@ -71,11 +83,11 @@ export default function StudentDashboard() {
             <div key={b._id} className="row" style={{ justifyContent: 'space-between' }}>
               <span>
                 <strong>{b.subjectId?.name || 'Class'}</strong>
-                {b.tutorUserId?.name && (
-                  <span className="muted"> · {b.tutorUserId.name}</span>
+                {b.tutorUserId && (
+                  <span className="muted"> · {tutorRef(b.tutorUserId)}</span>
                 )}
               </span>
-              <span className="muted">{formatDate(b.startAt)}</span>
+              <span className="muted">{formatInZone(b.startAt, b.timezone)}</span>
             </div>
           ))}
         </section>
@@ -93,7 +105,7 @@ export default function StudentDashboard() {
               <span>
                 <Link to={`/student/homework/${h._id}`}>{h.title}</Link>
               </span>
-              <span className="muted">Due {formatDate(h.deadline)}</span>
+              <span className="muted">Due {formatInZone(h.deadline, h.timezone)}</span>
             </div>
           ))}
         </section>
@@ -130,7 +142,7 @@ export default function StudentDashboard() {
             <span>
               <span className={statusBadge(a.type)}>{titleCase(a.type)}</span> {a.summary}
             </span>
-            <span className="muted">{formatDate(a.at)}</span>
+            <span className="muted">{formatInZone(a.at)}</span>
           </div>
         ))}
       </section>

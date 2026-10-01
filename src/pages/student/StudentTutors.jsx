@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listBoards, listClassLevels, listSubjects, searchTutors } from '../../api';
+import {
+  addFavoriteTutor,
+  listBoards,
+  listClassLevels,
+  listCountries,
+  listSubjects,
+  removeFavoriteTutor,
+  searchTutors,
+} from '../../api';
 import {
   ErpButton,
   ErpModal,
@@ -8,18 +16,31 @@ import {
   ErpPageHeader,
   ErpSearch,
   ErpSelect,
-  ErpTabs,
 } from '../../components/erp';
-import { money } from '../../utils/format';
-import {
-  AVAILABILITY_FILTER_OPTIONS,
-  LEVEL_FILTER_OPTIONS,
-  MODE_FILTER_OPTIONS,
-  subjectFilterOptions,
-  titleCase,
-} from './studentOptions';
+import { countryLine, formatPlace, money, tutorRef } from '../../utils/format';
+import { mediaUrl } from '../../utils/mediaUrl';
+import { useCatalog } from '../../context/CatalogContext';
+import { AVAILABILITY_FILTER_OPTIONS, stateOptions, subjectFilterOptions } from './studentOptions';
 
 const PAGE_SIZE = 12;
+
+function refInitials(user) {
+  const code = String(tutorRef(user) || '').replace('SCH-', '');
+  return (code.slice(0, 2) || 'T').toUpperCase();
+}
+
+function subjectNames(item) {
+  return (item.subjects || []).map((s) => s.subjectId?.name).filter(Boolean);
+}
+
+function modeChips(mode) {
+  if (mode === 'online') return [{ label: 'Online', className: 'erp-chip erp-chip-online' }];
+  if (mode === 'offline') return [{ label: 'Offline', className: 'erp-chip erp-chip-offline' }];
+  return [
+    { label: 'Online', className: 'erp-chip erp-chip-online' },
+    { label: 'Offline', className: 'erp-chip erp-chip-offline' },
+  ];
+}
 
 const emptyFilters = {
   search: '',
@@ -27,6 +48,9 @@ const emptyFilters = {
   level: '',
   language: '',
   country: '',
+  state: '',
+  timeSlot: '',
+  favorites: '',
   minPrice: '',
   maxPrice: '',
   minRating: '',
@@ -37,12 +61,15 @@ const emptyFilters = {
   area: '',
   boardId: '',
   classLevelId: '',
+  category: '',
 };
 
 export default function StudentTutors({ profileBase = '/student/tutors' }) {
+  const { options } = useCatalog();
   const [subjects, setSubjects] = useState([]);
   const [boards, setBoards] = useState([]);
   const [classLevels, setClassLevels] = useState([]);
+  const [countries, setCountries] = useState([]);
   const [filters, setFilters] = useState(emptyFilters);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -56,7 +83,14 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
     setLoading(true);
     setError('');
     try {
-      const data = await searchTutors({ ...nextFilters, page: nextPage, limit: PAGE_SIZE });
+      const query = { ...nextFilters, page: nextPage, limit: PAGE_SIZE };
+      if (query.mode !== 'offline') {
+        delete query.country;
+        delete query.state;
+        delete query.city;
+        delete query.area;
+      }
+      const data = await searchTutors(query);
       setItems(data.items || []);
       setTotal(data.total || 0);
     } catch (err) {
@@ -67,15 +101,31 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
   };
 
   useEffect(() => {
-    Promise.all([listSubjects(), listBoards(), listClassLevels()])
-      .then(([d, b, l]) => {
+    Promise.all([listSubjects(), listBoards(), listClassLevels(), listCountries()])
+      .then(([d, b, l, c]) => {
         setSubjects(d.items || []);
         setBoards(Array.isArray(b) ? b : b.items || []);
         setClassLevels(Array.isArray(l) ? l : l.items || []);
+        setCountries(Array.isArray(c) ? c : c.items || []);
       })
       .catch(() => {});
-    load();
   }, []);
+
+  useEffect(() => {
+    setPage(1);
+    load(filters, 1);
+  }, [
+    filters.mode,
+    filters.favorites,
+    filters.timeSlot,
+    filters.subjectId,
+    filters.level,
+    filters.country,
+    filters.state,
+    filters.city,
+    filters.area,
+    filters.category,
+  ]);
 
   const set = (key) => (e) => setFilters((f) => ({ ...f, [key]: e.target.value }));
 
@@ -85,32 +135,97 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="avail-bar">
-        <ErpTabs
+        <ErpSelect
+          inline
           value={filters.mode || 'all'}
-          onChange={(value) => setFilters((f) => ({ ...f, mode: value === 'all' ? '' : value }))}
-          tabs={[
-            { value: 'all', label: 'All' },
-            { value: 'online', label: 'Online' },
-            { value: 'offline', label: 'Offline' },
-          ]}
+          options={options('delivery_mode', { all: 'All modes', allValue: 'all' })}
+          onChange={(e) => {
+            const value = e.target.value;
+            setFilters((f) => ({
+              ...f,
+              mode: value === 'all' ? '' : value,
+              ...(value !== 'offline' ? { country: '', state: '', city: '', area: '' } : {}),
+            }));
+          }}
+        />
+        <ErpSelect
+          inline
+          value={filters.category || 'all'}
+          options={options('subject_category', { all: 'All classes', allValue: 'all' })}
+          onChange={(e) => {
+            const value = e.target.value;
+            setFilters((f) => ({ ...f, category: value === 'all' ? '' : value, subjectId: '' }));
+          }}
         />
         <ErpSearch
           value={filters.search}
           onChange={(value) => setFilters((f) => ({ ...f, search: value }))}
-          placeholder="Search tutor name"
+          placeholder="Search reference id"
         />
         <ErpSelect
           inline
           value={filters.subjectId}
-          options={subjectFilterOptions(subjects)}
+          options={subjectFilterOptions(
+            filters.category
+              ? subjects.filter((s) => (s.category || 'ibdp') === filters.category)
+              : subjects
+          )}
           onChange={set('subjectId')}
         />
         <ErpSelect
           inline
           value={filters.level}
-          options={LEVEL_FILTER_OPTIONS}
+          options={options('subject_level', { all: 'Any level' })}
           onChange={set('level')}
         />
+        <ErpSelect
+          inline
+          value={filters.timeSlot}
+          options={options('time_slot', { all: 'Any time slot' })}
+          onChange={set('timeSlot')}
+        />
+        <ErpSelect
+          inline
+          value={filters.favorites === 'true' ? 'fav' : 'all'}
+          options={[
+            { value: 'all', label: 'All tutors' },
+            { value: 'fav', label: 'Favorites' },
+          ]}
+          onChange={(e) =>
+            setFilters((f) => ({ ...f, favorites: e.target.value === 'fav' ? 'true' : '' }))
+          }
+        />
+        {filters.mode === 'offline' && (
+          <>
+            <ErpSelect
+              inline
+              value={filters.country}
+              options={[
+                { value: '', label: 'Country' },
+                ...countries.map((c) => ({ value: c.name, label: `${c.name} (${c.code})` })),
+              ]}
+              onChange={set('country')}
+            />
+            <ErpSelect
+              inline
+              value={filters.state}
+              options={stateOptions(filters.country)}
+              onChange={set('state')}
+            />
+            <input
+              className="erp-search"
+              placeholder="City"
+              value={filters.city}
+              onChange={set('city')}
+            />
+            <input
+              className="erp-search"
+              placeholder="Area"
+              value={filters.area}
+              onChange={set('area')}
+            />
+          </>
+        )}
         <div className="avail-bar-actions">
           <ErpButton variant="secondary" type="button" onClick={() => setMoreOpen(true)}>
             More filters
@@ -185,6 +300,19 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
         />
         {filters.mode === 'offline' && (
           <>
+            <ErpSelect
+              label="Country"
+              value={filters.country}
+              options={[
+                { value: '', label: 'Any country' },
+                ...countries.map((c) => ({ value: c.name, label: `${c.name} (${c.code})` })),
+              ]}
+              onChange={set('country')}
+            />
+            <div className="field">
+              <label>State</label>
+              <input className="erp-search" value={filters.state} onChange={set('state')} />
+            </div>
             <div className="field">
               <label>City</label>
               <input className="erp-search" value={filters.city} onChange={set('city')} />
@@ -198,10 +326,6 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
         <div className="field">
           <label>Language</label>
           <input className="erp-search" value={filters.language} onChange={set('language')} />
-        </div>
-        <div className="field">
-          <label>Country</label>
-          <input className="erp-search" value={filters.country} onChange={set('country')} />
         </div>
         <div className="field">
           <label>Min rating</label>
@@ -255,43 +379,111 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
           No tutors matched. Adjust filters or switch online / offline.
         </div>
       ) : (
-        <div className="grid two">
+        <div className="tutor-card-grid">
           {items.map((item) => {
             const p = item.profile;
             const u = p.userId || {};
             const id = u._id || p.userId;
+            const subjects = subjectNames(item);
+            const extraSubjects = Math.max(0, subjects.length - 4);
+            const avatar = mediaUrl(u.avatar);
             return (
-              <div key={id} className="erp-card stack">
-                <div>
-                  <h3 style={{ margin: 0 }}>{u.name || 'Tutor'}</h3>
-                  <p className="muted" style={{ margin: '0.25rem 0 0' }}>
-                    {p.university || '—'} · {p.experienceYears || 0} yrs · ★ {p.ratingAvg} (
-                    {p.ratingCount}) · {titleCase(p.teachingMode || 'both')}
-                  </p>
+              <article
+                key={id}
+                className={`erp-card tutor-card${p.isPremium ? ' tutor-card-premium' : ''}`}
+              >
+                <div className="tutor-card-top">
+                  <div className="tutor-card-identity">
+                    {avatar ? (
+                      <img className="tutor-card-avatar-img" src={avatar} alt="" />
+                    ) : (
+                      <span className="tutor-card-avatar" aria-hidden>
+                        {refInitials(u)}
+                      </span>
+                    )}
+                    <div className="tutor-card-id">
+                      <h3>
+                        {tutorRef(u)}
+                        {p.isPremium && <span className="erp-chip erp-chip-offline">Premium</span>}
+                        {p.verificationStatus === 'approved' && (
+                          <span className="erp-chip erp-chip-online">Verified</span>
+                        )}
+                      </h3>
+                      <p className="muted">{countryLine(u.country, u.timezone, p.currency)}</p>
+                      {filters.mode === 'offline' && (
+                        <p className="muted">{formatPlace(p.location, u.country)}</p>
+                      )}
+                    </div>
+                  </div>
+                  <ErpButton
+                    variant="secondary"
+                    className={`tutor-card-fav${item.favorite ? ' is-on' : ''}`}
+                    type="button"
+                    aria-label={item.favorite ? 'Remove favorite' : 'Save favorite'}
+                    onClick={async () => {
+                      try {
+                        if (item.favorite) await removeFavoriteTutor(id);
+                        else await addFavoriteTutor(id);
+                        load();
+                      } catch (err) {
+                        setError(err.message);
+                      }
+                    }}
+                  >
+                    {item.favorite ? '★' : '☆'}
+                  </ErpButton>
                 </div>
-                <p>
-                  <strong>{money(p.hourlyRateOnline || p.hourlyRate, p.currency)}</strong>
-                  <span className="muted"> online</span>
-                  {(p.hourlyRateOffline || p.hourlyRate) && (
-                    <span className="muted">
-                      {' '}
-                      · {money(p.hourlyRateOffline || p.hourlyRate, p.currency)} offline
+
+                <div className="tutor-card-stats">
+                  <span className="tutor-card-stat tutor-card-stat-rating">
+                    ★ {Number(p.ratingAvg || 0).toFixed(1)}
+                    <span className="muted">({p.ratingCount || 0})</span>
+                  </span>
+                  <span className="tutor-card-stat">{p.experienceYears || 0} yrs</span>
+                  {modeChips(p.teachingMode).map((chip) => (
+                    <span key={chip.label} className={chip.className}>
+                      {chip.label}
                     </span>
+                  ))}
+                </div>
+
+                <div className="tutor-card-subjects">
+                  {subjects.length ? (
+                    <>
+                      {subjects.slice(0, 4).map((name) => (
+                        <span key={name} className="tutor-card-subject" title={name}>
+                          {name}
+                        </span>
+                      ))}
+                      {extraSubjects > 0 && (
+                        <span className="tutor-card-subject">+{extraSubjects} more</span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="muted">No subjects listed</span>
                   )}
-                  {p.verificationStatus && (
-                    <span className="muted"> · {titleCase(p.verificationStatus)}</span>
-                  )}
-                </p>
-                <p className="muted">
-                  {(item.subjects || [])
-                    .map((s) => s.subjectId?.name)
-                    .filter(Boolean)
-                    .join(', ') || 'No subjects listed'}
-                </p>
-                <Link className="btn" to={`${profileBase}/${id}`}>
-                  View profile
-                </Link>
-              </div>
+                </div>
+
+                <div className="tutor-card-rates">
+                  <div className="tutor-card-rate">
+                    <strong>{money(p.hourlyRateOnline || p.hourlyRate, p.currency)}</strong>
+                    <span>Online / hr</span>
+                  </div>
+                  <div className="tutor-card-rate">
+                    <strong>{money(p.hourlyRateOffline || p.hourlyRate, p.currency)}</strong>
+                    <span>Offline / hr</span>
+                  </div>
+                </div>
+
+                <div className="tutor-card-foot">
+                  <span className="muted">
+                    {[p.university, p.qualifications].filter(Boolean).join(' · ') || 'IB tutor'}
+                  </span>
+                  <Link className="btn" to={`${profileBase}/${id}`}>
+                    View profile
+                  </Link>
+                </div>
+              </article>
             );
           })}
         </div>

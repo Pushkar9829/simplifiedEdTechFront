@@ -14,6 +14,7 @@ const NAV_GROUPS = [
     label: 'People',
     items: [
       { to: '/admin/users', label: 'Users' },
+      { to: '/admin/bookings', label: 'Bookings' },
       { to: '/admin/verifications', label: 'Verifications' },
       { to: '/admin/tickets', label: 'Support tickets' },
     ],
@@ -38,6 +39,10 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'System',
+    items: [{ to: '/admin/settings', label: 'Settings' }],
+  },
+  {
     label: 'Account',
     items: [{ to: '/admin/profile', label: 'Profile' }],
   },
@@ -46,6 +51,8 @@ const NAV_GROUPS = [
 const TITLES = {
   '/admin': 'Analytics',
   '/admin/users': 'Users',
+  '/admin/bookings': 'Bookings',
+  '/admin/settings': 'Settings',
   '/admin/verifications': 'Verifications',
   '/admin/payments': 'Payments',
   '/admin/wallets': 'Wallets',

@@ -1,5 +1,6 @@
 /** Shared option lists for student dropdowns */
 
+import { formatInZone } from '../../utils/format';
 import {
   LEVEL_OPTIONS,
   resourceTypeOptions,
@@ -37,6 +38,34 @@ export function subjectFilterOptions(subjects = []) {
   return [{ value: '', label: 'All subjects' }, ...subjectOptions(subjects)];
 }
 
+export const STATES_BY_COUNTRY = {
+  India: [
+    'Andhra Pradesh',
+    'Delhi',
+    'Gujarat',
+    'Karnataka',
+    'Kerala',
+    'Maharashtra',
+    'Tamil Nadu',
+    'Telangana',
+    'Uttar Pradesh',
+    'West Bengal',
+  ],
+  'United Kingdom': ['England', 'Scotland', 'Wales', 'Northern Ireland'],
+};
+
+export function stateOptions(country) {
+  const states = STATES_BY_COUNTRY[country] || [];
+  return [{ value: '', label: 'Any state' }, ...states.map((s) => ({ value: s, label: s }))];
+}
+
+export const TIME_SLOT_OPTIONS = [
+  { value: '', label: 'Any time slot' },
+  { value: 'morning', label: 'Morning (6–12)' },
+  { value: 'afternoon', label: 'Afternoon (12–17)' },
+  { value: 'evening', label: 'Evening (17–22)' },
+];
+
 export const MODE_FILTER_OPTIONS = [
   { value: '', label: 'Any mode' },
   { value: 'online', label: 'Online (Zoom)' },
@@ -58,7 +87,7 @@ export function slotOptions(slots = []) {
     { value: '', label: 'Select slot' },
     ...slots.map((s) => ({
       value: s._id,
-      label: `${new Date(s.startAt).toLocaleString()} → ${new Date(s.endAt).toLocaleString()}${
+      label: `${formatInZone(s.startAt, s.timezone)} → ${formatInZone(s.endAt, s.timezone)}${
         s.deliveryMode ? ` · ${s.deliveryMode}` : ''
       }${!isSlotBookable(s) && !s.isBooked ? ' (inside 12h)' : ''}`,
       disabled: s.isBooked || !isSlotBookable(s),

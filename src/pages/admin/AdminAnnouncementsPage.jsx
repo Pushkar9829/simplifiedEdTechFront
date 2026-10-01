@@ -14,7 +14,7 @@ import {
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
 import { formatDate } from '../../utils/format';
-import { AUDIENCE_OPTIONS } from './adminOptions';
+import { useCatalog } from '../../context/CatalogContext';
 import { useAdminModalQuery } from './useAdminModalQuery';
 
 const emptyForm = {
@@ -25,6 +25,7 @@ const emptyForm = {
 };
 
 function AnnouncementForm({ id, onSaved, onCancel }) {
+  const { options } = useCatalog();
   const isEdit = Boolean(id);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
@@ -110,7 +111,7 @@ function AnnouncementForm({ id, onSaved, onCancel }) {
         <ErpSelect
           label="Audience"
           value={form.audience}
-          options={AUDIENCE_OPTIONS}
+          options={options('audience')}
           onChange={(e) => setForm((f) => ({ ...f, audience: e.target.value }))}
         />
         <label className="row" style={{ alignItems: 'center', marginTop: '1.4rem' }}>

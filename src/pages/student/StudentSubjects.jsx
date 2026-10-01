@@ -1,18 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listSubjects, selectSubjects } from '../../api';
 import { useAuth } from '../../context/AuthContext';
-import { ErpPager, ErpSearch } from '../../components/erp';
+import { useCatalog } from '../../context/CatalogContext';
+import { ErpButton, ErpCard, ErpPager, ErpPageHeader, ErpSearch, ErpTabs } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
 
 export default function StudentSubjects() {
   const { profile, refresh } = useAuth();
+  const { options } = useCatalog();
   const [subjects, setSubjects] = useState([]);
   const [selected, setSelected] = useState([]);
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState('all');
 
   useEffect(() => {
     listSubjects()
@@ -45,63 +48,76 @@ export default function StudentSubjects() {
     }
   };
 
-  const list = useListFilter(subjects, (s) => [s.name, s.code].filter(Boolean).join(' '));
+  const visible = useMemo(() => {
+    if (tab === 'all') return subjects;
+    return subjects.filter((s) => (s.category || 'ibdp') === tab);
+  }, [subjects, tab]);
+
+  const list = useListFilter(visible, (s) => [s.name, s.code, s.category].filter(Boolean).join(' '), {
+    resetKey: tab,
+  });
 
   return (
     <div className="page stack">
-      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 style={{ margin: 0 }}>My IBDP subjects</h1>
-          <p className="muted" style={{ margin: '0.25rem 0 0' }}>
-            Select the diploma subjects you are studying
-          </p>
-        </div>
-        <Link to="/student/tutors" className="btn secondary">
-          Find tutors
-        </Link>
-      </div>
+      <ErpPageHeader
+        subtitle="Select the IBDP and hobby classes you are studying."
+        actions={
+          <Link to="/student/tutors" className="btn">
+            Find tutors
+          </Link>
+        }
+      />
 
       {msg && <div className="success-banner">{msg}</div>}
       {error && <div className="error-banner">{error}</div>}
 
       <div className="avail-bar">
+        <ErpTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'all', label: `All (${subjects.length})` },
+            ...options('subject_category').map((o) => ({ value: o.value, label: o.label })),
+          ]}
+        />
         <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search subjects" />
         <div className="avail-bar-actions">
-          <Link to="/student/tutors" className="erp-btn-secondary">
-            Find tutors
-          </Link>
+          <ErpButton onClick={save} disabled={saving}>
+            {saving ? 'Saving…' : `Save (${selected.length})`}
+          </ErpButton>
         </div>
       </div>
 
       {loading ? (
-        <div className="erp-card empty">Loading subjects…</div>
+        <ErpCard className="empty">Loading subjects…</ErpCard>
       ) : list.noMatch ? (
-        <div className="erp-card empty">No subjects match that search.</div>
+        <ErpCard className="empty">No subjects match that search.</ErpCard>
       ) : (
-        <div className="erp-card grid two">
-          {list.items.map((s) => (
-            <label key={s._id} className="row" style={{ gap: '0.45rem' }}>
-              <input
-                type="checkbox"
-                checked={selected.includes(s._id)}
-                onChange={() => toggle(s._id)}
-              />
-              <span>
-                <strong>{s.name}</strong>
-                {s.code && <span className="muted"> · {s.code}</span>}
-              </span>
-            </label>
-          ))}
-          {!subjects.length && <div className="empty">No subjects available.</div>}
+        <div className="tutor-card-grid">
+          {list.items.map((s) => {
+            const on = selected.includes(s._id);
+            return (
+              <label key={s._id} className={`erp-card tutor-card subject-pick${on ? ' is-on' : ''}`}>
+                <div className="tutor-card-top">
+                  <div className="tutor-card-identity">
+                    <input type="checkbox" checked={on} onChange={() => toggle(s._id)} />
+                    <div className="tutor-card-id">
+                      <h3>
+                        {s.name}
+                        {s.category && (
+                          <span className="erp-chip erp-chip-open">{s.category === 'ibdp' ? 'IBDP' : 'Hobby'}</span>
+                        )}
+                      </h3>
+                      <p className="muted">{[s.code, (s.levels || []).join(', ')].filter(Boolean).join(' · ') || '—'}</p>
+                    </div>
+                  </div>
+                </div>
+              </label>
+            );
+          })}
         </div>
       )}
       {list.total > 0 && <ErpPager {...list.pagerProps} noun="subject" />}
-
-      <div className="row">
-        <button className="btn" type="button" onClick={save} disabled={saving}>
-          {saving ? 'Saving…' : `Save selection (${selected.length})`}
-        </button>
-      </div>
     </div>
   );
 }

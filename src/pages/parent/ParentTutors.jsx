@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listChildren } from '../../api';
-import { ErpSelect } from '../../components/erp';
+import { ErpCard, ErpPageHeader, ErpSelect } from '../../components/erp';
 import StudentTutors from '../student/StudentTutors';
 
 export default function ParentTutors() {
@@ -28,24 +28,26 @@ export default function ParentTutors() {
   if (!children.length) {
     return (
       <div className="page stack">
-        <h1>Find a tutor</h1>
-        <div className="erp-card empty">
-          Link a child before you search.{' '}
-          <Link to="/parent/children/link">Link a child</Link> with their registered phone.
-        </div>
+        <ErpPageHeader subtitle="Book a tutor for a linked child." />
+        <ErpCard>
+          <div className="empty">
+            Link a child before you search. <Link to="/parent/children/link">Link a child</Link> with their registered
+            phone.
+          </div>
+        </ErpCard>
       </div>
     );
   }
 
   return (
     <div className="stack">
-      <div className="erp-card">
+      <div className="avail-bar">
         <ErpSelect
-          label="Book for child"
+          inline
           value={childId}
           options={children.map((c) => ({
             value: String(c.studentUserId?._id || c.studentUserId),
-            label: c.studentUserId?.name || 'Child',
+            label: `Book for ${c.studentUserId?.name || 'child'}`,
           }))}
           onChange={(e) => setChildId(e.target.value)}
         />
@@ -53,7 +55,9 @@ export default function ParentTutors() {
       {childId ? (
         <StudentTutors profileBase={`/parent/tutors/${childId}`} />
       ) : (
-        <div className="erp-card empty">Select a child to search tutors.</div>
+        <ErpCard>
+          <div className="empty">Select a child to search tutors.</div>
+        </ErpCard>
       )}
     </div>
   );

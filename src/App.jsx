@@ -20,6 +20,7 @@ import StudentSubjects from './pages/student/StudentSubjects';
 import StudentTutors from './pages/student/StudentTutors';
 import StudentTutorDetail from './pages/student/StudentTutorDetail';
 import StudentBookings from './pages/student/StudentBookings';
+import StudentClassPolicy from './pages/student/StudentClassPolicy';
 import StudentResources from './pages/student/StudentResources';
 import StudentHomework from './pages/student/StudentHomework';
 import StudentHomeworkDetailPage from './pages/student/StudentHomeworkDetailPage';
@@ -65,6 +66,8 @@ import AdminCampaignFormPage from './pages/admin/AdminCampaignFormPage';
 import AdminConfigsPage from './pages/admin/AdminConfigsPage';
 import AdminConfigFormPage from './pages/admin/AdminConfigFormPage';
 import AdminTicketsPage from './pages/admin/AdminTicketsPage';
+import AdminSettingsPage from './pages/admin/AdminSettingsPage';
+import AdminBookingsPage from './pages/admin/AdminBookingsPage';
 
 function HomeRedirect() {
   const { user, loading, homePath } = useAuth();
@@ -86,6 +89,7 @@ export default function App() {
           <Route path="tutors" element={<StudentTutors />} />
           <Route path="tutors/:id" element={<StudentTutorDetail />} />
           <Route path="bookings" element={<StudentBookings />} />
+          <Route path="policy" element={<StudentClassPolicy />} />
           <Route path="resources" element={<StudentResources />} />
           <Route path="homework" element={<StudentHomework />} />
           <Route path="homework/:id" element={<StudentHomeworkDetailPage />} />
@@ -124,6 +128,7 @@ export default function App() {
           <Route path="resources/new" element={<TutorResourceFormPage />} />
           <Route path="resources/:id/edit" element={<TutorResourceFormPage />} />
           <Route path="earnings" element={<TutorEarnings />} />
+          <Route path="payments" element={<PaymentsPage />} />
           <Route path="wallet" element={<WalletPage />} />
           <Route path="verification" element={<TutorVerification />} />
           <Route path="messages" element={<MessagesPage />} />
@@ -141,6 +146,7 @@ export default function App() {
           <Route path="tutors" element={<ParentTutors />} />
           <Route path="tutors/:childId/:id" element={<ParentTutorDetail />} />
           <Route path="bookings" element={<StudentBookings />} />
+          <Route path="policy" element={<StudentClassPolicy />} />
           <Route path="projects" element={<StudentProjects />} />
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="wallet" element={<WalletPage />} />
@@ -154,6 +160,8 @@ export default function App() {
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<AdminAnalyticsPage />} />
           <Route path="users" element={<AdminUsersPage />} />
+          <Route path="bookings" element={<AdminBookingsPage />} />
+          <Route path="settings" element={<AdminSettingsPage />} />
           <Route path="verifications" element={<AdminVerificationsPage />} />
           <Route path="payments" element={<AdminPaymentsPage />} />
           <Route path="wallets" element={<AdminWalletsPage />} />

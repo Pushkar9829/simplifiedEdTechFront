@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { listConfigs, setConfig } from '../../api';
+import { deleteConfig, listConfigs, setConfig } from '../../api';
 import {
   ErpButton,
   ErpCard,
+  ErpConfirm,
   ErpDataTable,
   ErpModal,
+  ErpOverflow,
   ErpPager,
   ErpPageHeader,
   ErpSearch,
@@ -126,6 +128,7 @@ export default function AdminConfigsPage() {
   const [items, setItems] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -197,16 +200,13 @@ export default function AdminConfigsPage() {
                       </code>
                     </td>
                     <td className="muted">{c.description || '—'}</td>
-                    <td>
-                      <ErpButton
-                        variant="secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEdit(c.key);
-                        }}
-                      >
-                        View
-                      </ErpButton>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <ErpOverflow
+                        items={[
+                          { label: 'Edit', onClick: () => openEdit(c.key) },
+                          { label: 'Remove', danger: true, onClick: () => setPendingDelete(c) },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -228,6 +228,25 @@ export default function AdminConfigsPage() {
           onCancel={close}
         />
       </ErpModal>
+
+      <ErpConfirm
+        open={Boolean(pendingDelete)}
+        title="Remove config"
+        message={pendingDelete ? `Remove ${pendingDelete.key}?` : ''}
+        confirmLabel="Remove"
+        danger
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={async () => {
+          try {
+            await deleteConfig(pendingDelete.key);
+            setPendingDelete(null);
+            load();
+          } catch (err) {
+            setError(err.message);
+            setPendingDelete(null);
+          }
+        }}
+      />
     </div>
   );
 }

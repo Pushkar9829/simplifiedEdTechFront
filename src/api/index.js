@@ -8,7 +8,7 @@ export const getMe = () => apiGet('/api/auth/me');
 export const updateMe = (body) => apiPatch('/api/users/me', body);
 
 export const getStudentDashboard = () => apiGet('/api/students/dashboard');
-export const listSubjects = () => apiGet('/api/subjects');
+export const listSubjects = (params = {}) => apiGet(`/api/subjects${qs(params)}`);
 export const selectSubjects = (subjectIds) => apiPost('/api/subjects/select', { subjectIds });
 
 export const searchTutors = (params = {}) => {
@@ -18,6 +18,9 @@ export const searchTutors = (params = {}) => {
   return apiGet(`/api/tutors${q ? `?${q}` : ''}`);
 };
 export const getTutor = (id) => apiGet(`/api/tutors/${id}`);
+export const addFavoriteTutor = (id) => apiPost(`/api/tutors/${id}/favorite`, {});
+export const removeFavoriteTutor = (id) => apiDelete(`/api/tutors/${id}/favorite`);
+export const listFavoriteTutors = () => apiGet('/api/tutors/favorites');
 export const updateTutorProfile = (body) => apiPatch('/api/tutors/me', body);
 export const listOfferings = () => apiGet('/api/tutors/me/offerings');
 export const addOffering = (body) => apiPost('/api/tutors/me/offerings', body);
@@ -49,8 +52,20 @@ export const deleteLessonPlan = (id) => apiDelete(`/api/tutors/me/lesson-plans/$
 
 export const listBookings = (params = {}) => apiGet(`/api/bookings${qs(params)}`);
 export const createBooking = (body) => apiPost('/api/bookings', body);
-export const cancelBooking = (id) => apiPost(`/api/bookings/${id}/cancel`, {});
+export const cancelBooking = (id, body = {}) => apiPost(`/api/bookings/${id}/cancel`, body);
 export const rescheduleBooking = (id, body) => apiPost(`/api/bookings/${id}/reschedule`, body);
+export const requestReschedule = (id, body = {}) => apiPost(`/api/bookings/${id}/reschedule/request`, body);
+export const offerRescheduleSlots = (id, slotIds = []) =>
+  apiPost(`/api/bookings/${id}/reschedule/offer`, { slotIds });
+export const selectRescheduleSlot = (id, slotId) =>
+  apiPost(`/api/bookings/${id}/reschedule/select`, { slotId });
+export const proposeReplacementTutor = (id, tutorUserId) =>
+  apiPost(`/api/bookings/${id}/reschedule/replacement`, { tutorUserId });
+export const approveReplacementTutor = (id) => apiPost(`/api/bookings/${id}/reschedule/approve`, {});
+export const declineReschedule = (id) => apiPost(`/api/bookings/${id}/reschedule/decline`, {});
+export const listScheduleChanges = () => apiGet('/api/bookings/schedule-changes');
+export const rescheduleEntitlement = (params = {}) =>
+  apiGet(`/api/bookings/reschedule-entitlement${qs(params)}`);
 export const setAttendance = (id, attendance) =>
   apiPatch(`/api/bookings/${id}/attendance`, { attendance });
 export const setMeetingStatus = (id, meetingStatus) =>
@@ -62,6 +77,7 @@ export const completeBooking = (id, bodyOrFormData = {}) =>
 export const saveSessionReport = (id, body) =>
   api(`/api/bookings/${id}/report`, { method: 'PUT', body });
 export const joinBooking = (id) => apiGet(`/api/bookings/${id}/join`);
+export const sendBookingFeedback = (id, body) => apiPost(`/api/bookings/${id}/feedback`, body);
 export const getBookingSummary = (id) => apiGet(`/api/bookings/${id}/summary`);
 export const getBookingChain = (id) => apiGet(`/api/bookings/${id}/chain`);
 export const getStudentInsights = (studentId) => apiGet(`/api/bookings/students/${studentId}/insights`);
@@ -77,12 +93,19 @@ export const listCountries = (params = {}) => apiGet(`/api/catalog/countries${qs
 export const listCurrencies = () => apiGet('/api/catalog/currencies');
 export const createCountry = (body) => apiPost('/api/catalog/countries', body);
 export const updateCountry = (id, body) => apiPatch(`/api/catalog/countries/${id}`, body);
+export const deleteCountry = (id) => apiDelete(`/api/catalog/countries/${id}`);
 export const listBoards = (params = {}) => apiGet(`/api/catalog/boards${qs(params)}`);
 export const listClassLevels = (params = {}) => apiGet(`/api/catalog/class-levels${qs(params)}`);
 export const createBoard = (body) => apiPost('/api/catalog/boards', body);
 export const updateBoard = (id, body) => apiPatch(`/api/catalog/boards/${id}`, body);
+export const deleteBoard = (id) => apiDelete(`/api/catalog/boards/${id}`);
 export const createClassLevel = (body) => apiPost('/api/catalog/class-levels', body);
 export const updateClassLevel = (id, body) => apiPatch(`/api/catalog/class-levels/${id}`, body);
+export const deleteClassLevel = (id) => apiDelete(`/api/catalog/class-levels/${id}`);
+export const listLookups = (params = {}) => apiGet(`/api/catalog/lookups${qs(params)}`);
+export const createLookup = (body) => apiPost('/api/catalog/lookups', body);
+export const updateLookup = (id, body) => apiPatch(`/api/catalog/lookups/${id}`, body);
+export const deleteLookup = (id) => apiDelete(`/api/catalog/lookups/${id}`);
 
 export const listTutorVideos = () => apiGet('/api/tutors/me/videos');
 export const addTutorVideo = (bodyOrFormData) => {
@@ -184,6 +207,9 @@ export const enrollCourse = (id, body = {}) => apiPost(`/api/courses/${id}/enrol
 
 export const purchaseResource = (id) => apiPost(`/api/resources/${id}/purchase`, {});
 export const downloadResource = (id) => apiGet(`/api/resources/${id}/download`);
+export const suggestResourceChange = (id, body) => apiPost(`/api/resources/${id}/suggestions`, body);
+export const reviewResource = (id, body) => apiPost(`/api/resources/${id}/reviews`, body);
+export const listResourceSuggestions = (id) => apiGet(`/api/resources/${id}/suggestions`);
 
 export const messageContacts = () => apiGet('/api/messages/contacts');
 
@@ -222,6 +248,7 @@ export const createPlan = (body) => apiPost('/api/admin/subscription-plans', bod
 export const updatePlan = (id, body) => apiPatch(`/api/admin/subscription-plans/${id}`, body);
 export const createSubject = (body) => apiPost('/api/subjects', body);
 export const updateSubject = (id, body) => apiPatch(`/api/subjects/${id}`, body);
+export const deleteSubject = (id) => apiDelete(`/api/subjects/${id}`);
 
 export const listAnnouncements = (params = {}) => {
   const q = new URLSearchParams(
@@ -244,6 +271,7 @@ export const createTicket = (body) => apiPost('/api/cms/tickets', body);
 export const updateTicket = (id, body) => apiPatch(`/api/cms/tickets/${id}`, body);
 export const listConfigs = () => apiGet('/api/cms/configs');
 export const setConfig = (body) => apiPost('/api/cms/configs', body);
+export const deleteConfig = (key) => apiDelete(`/api/cms/configs/${encodeURIComponent(key)}`);
 
 export const getResource = (id) => apiGet(`/api/resources/${id}`);
 export const updateResource = (id, bodyOrFormData) =>

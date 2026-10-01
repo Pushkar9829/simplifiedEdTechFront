@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listHomework } from '../../api';
-import { ErpButton, ErpCalendar, ErpCard, ErpPager, ErpSearch, ErpTabs } from '../../components/erp';
+import {
+  ErpButton,
+  ErpCalendar,
+  ErpCard,
+  ErpPager,
+  ErpPageHeader,
+  ErpSearch,
+  ErpSelect,
+  ErpStatusBadge,
+  ErpTabs,
+} from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
-import { formatDate, statusBadge } from '../../utils/format';
+import { formatDate } from '../../utils/format';
 import { titleCase } from './studentOptions';
 
 function isOverdue(h) {
@@ -24,6 +34,16 @@ export default function StudentHomework() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  const counts = useMemo(
+    () => ({
+      assigned: items.filter((h) => h.status === 'assigned').length,
+      submitted: items.filter((h) => h.status === 'submitted').length,
+      graded: items.filter((h) => h.status === 'graded').length,
+      overdue: items.filter(isOverdue).length,
+    }),
+    [items]
+  );
 
   const visible = items.filter((h) => {
     if (tab === 'assigned') return h.status === 'assigned';
@@ -55,7 +75,7 @@ export default function StudentHomework() {
 
   return (
     <div className="page stack">
-      <h1>Homework</h1>
+      <ErpPageHeader subtitle="Assignments from your tutors. Open one to submit work." />
       {error && <div className="error-banner">{error}</div>}
 
       <div className="avail-bar">
@@ -64,20 +84,21 @@ export default function StudentHomework() {
           onChange={setTab}
           tabs={[
             { value: 'all', label: `All (${items.length})` },
-            { value: 'assigned', label: 'Assigned' },
-            { value: 'submitted', label: 'Submitted' },
-            { value: 'graded', label: 'Graded' },
-            { value: 'overdue', label: 'Overdue' },
+            { value: 'assigned', label: `Assigned (${counts.assigned})` },
+            { value: 'submitted', label: `Submitted (${counts.submitted})` },
+            { value: 'graded', label: `Graded (${counts.graded})` },
+            { value: 'overdue', label: `Overdue (${counts.overdue})` },
           ]}
         />
         <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search homework" />
-        <ErpTabs
+        <ErpSelect
+          inline
           value={view}
-          onChange={setView}
-          tabs={[
+          options={[
             { value: 'list', label: 'List' },
             { value: 'calendar', label: 'Calendar' },
           ]}
+          onChange={(e) => setView(e.target.value)}
         />
       </div>
 
@@ -95,7 +116,7 @@ export default function StudentHomework() {
           )}
         </ErpCard>
       ) : (
-        <div className="erp-card">
+        <ErpCard className="erp-card-flush">
           {loading ? (
             <div className="empty">Loading homework…</div>
           ) : !items.length ? (
@@ -105,39 +126,30 @@ export default function StudentHomework() {
           ) : list.noMatch ? (
             <div className="empty">No assignments match that search.</div>
           ) : (
-            <table className="erp-data-table table">
-              <thead>
-                <tr>
-                  <th>Title</th>
-                  <th>Subject</th>
-                  <th>Deadline</th>
-                  <th>Status</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {list.items.map((h) => (
-                  <tr key={h._id}>
-                    <td>
-                      <strong>{h.title}</strong>
-                    </td>
-                    <td>{h.subjectId?.name || '—'}</td>
-                    <td>{formatDate(h.deadline)}</td>
-                    <td>
-                      <span className={statusBadge(h.status)}>{titleCase(h.status)}</span>
-                    </td>
-                    <td>
-                      <ErpButton variant="secondary" onClick={() => navigate(`/student/homework/${h._id}`)}>
-                        Open
-                      </ErpButton>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="tutor-profile-list" style={{ padding: '0.75rem' }}>
+              {list.items.map((h) => (
+                <article key={h._id} className="tutor-profile-row booking-card">
+                  <div className="booking-card-main">
+                    <h3>
+                      {h.title}
+                      {isOverdue(h) && <span className="erp-chip erp-chip-booked">Overdue</span>}
+                    </h3>
+                    <p className="muted">
+                      {h.subjectId?.name || 'Subject'} · due {formatDate(h.deadline)}
+                    </p>
+                    <div className="booking-card-status">
+                      <ErpStatusBadge status={h.status}>{titleCase(h.status)}</ErpStatusBadge>
+                    </div>
+                  </div>
+                  <ErpButton variant="secondary" onClick={() => navigate(`/student/homework/${h._id}`)}>
+                    Open
+                  </ErpButton>
+                </article>
+              ))}
+            </div>
           )}
           {list.total > 0 && <ErpPager {...list.pagerProps} noun="assignment" />}
-        </div>
+        </ErpCard>
       )}
     </div>
   );

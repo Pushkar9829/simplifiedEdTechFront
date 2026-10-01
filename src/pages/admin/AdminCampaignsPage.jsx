@@ -12,7 +12,7 @@ import {
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
 import { money } from '../../utils/format';
-import { CAMPAIGN_CHANNEL_OPTIONS } from './adminOptions';
+import { useCatalog } from '../../context/CatalogContext';
 import { useAdminModalQuery } from './useAdminModalQuery';
 
 const emptyForm = {
@@ -36,6 +36,8 @@ function toDateInput(v) {
 }
 
 function CampaignForm({ id, onSaved, onCancel }) {
+  const { options } = useCatalog();
+  const catalogChannels = options('campaign_channel');
   const isEdit = Boolean(id);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
@@ -83,10 +85,10 @@ function CampaignForm({ id, onSaved, onCancel }) {
     };
   }, [id, isEdit]);
 
-  const channelOptions = CAMPAIGN_CHANNEL_OPTIONS.some((o) => o.value === form.channel)
-    ? CAMPAIGN_CHANNEL_OPTIONS
+  const channelOptions = catalogChannels.some((o) => o.value === form.channel)
+    ? catalogChannels
     : [
-        ...CAMPAIGN_CHANNEL_OPTIONS,
+        ...catalogChannels,
         {
           value: form.channel,
           label: form.channel.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),

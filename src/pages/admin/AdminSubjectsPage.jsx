@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createSubject, listSubjects, updateSubject } from '../../api';
+import { createSubject, deleteSubject, listSubjects, updateSubject } from '../../api';
+import { useCatalog } from '../../context/CatalogContext';
 import {
   ErpButton,
   ErpCard,
-  ErpDataTable,
   ErpModal,
   ErpPager,
   ErpPageHeader,
   ErpSearch,
+  ErpOverflow,
   ErpStatusBadge,
   ErpTabs,
 } from '../../components/erp';
@@ -18,12 +19,15 @@ const emptyForm = {
   name: '',
   code: '',
   levels: ['HL', 'SL'],
-  category: '',
+  category: 'hobby',
   description: '',
   isActive: true,
 };
 
 function SubjectForm({ id, onSaved, onCancel }) {
+  const { options } = useCatalog();
+  const categoryOptions = options('subject_category');
+  const levelChoices = options('subject_level');
   const isEdit = Boolean(id);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
@@ -41,7 +45,7 @@ function SubjectForm({ id, onSaved, onCancel }) {
       setLoading(true);
       setError('');
       try {
-        const data = await listSubjects();
+        const data = await listSubjects({ includeInactive: 'true' });
         const subject = (data.items || []).find((s) => s._id === id);
         if (!subject) {
           if (!cancelled) setError('Subject not found');
@@ -121,23 +125,30 @@ function SubjectForm({ id, onSaved, onCancel }) {
       </div>
       <div className="field">
         <label>Category</label>
-        <input
+        <select
           className="erp-search"
           value={form.category}
           onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-        />
+        >
+          <option value="">Select category</option>
+          {categoryOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
       </div>
       <div className="field">
         <label>Levels</label>
         <div className="row">
-          {['HL', 'SL', 'N/A'].map((level) => (
-            <label key={level} className="row" style={{ gap: '0.35rem' }}>
+          {levelChoices.map((level) => (
+            <label key={level.value} className="row" style={{ gap: '0.35rem' }}>
               <input
                 type="checkbox"
-                checked={form.levels.includes(level)}
-                onChange={() => toggleLevel(level)}
+                checked={form.levels.includes(level.value)}
+                onChange={() => toggleLevel(level.value)}
               />
-              {level}
+              {level.label}
             </label>
           ))}
         </div>
@@ -171,9 +182,11 @@ function SubjectForm({ id, onSaved, onCancel }) {
 }
 
 export default function AdminSubjectsPage() {
+  const { options } = useCatalog();
   const { isNew, editId, modalOpen, openNew, openEdit, close } = useAdminModalQuery();
   const [items, setItems] = useState([]);
   const [tab, setTab] = useState('all');
+  const [categoryTab, setCategoryTab] = useState('all');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -181,7 +194,7 @@ export default function AdminSubjectsPage() {
     setLoading(true);
     setError('');
     try {
-      const data = await listSubjects();
+      const data = await listSubjects({ includeInactive: 'true' });
       setItems(data.items || []);
     } catch (err) {
       setError(err.message);
@@ -195,19 +208,21 @@ export default function AdminSubjectsPage() {
   }, []);
 
   const visible = useMemo(() => {
-    if (tab === 'active') return items.filter((s) => s.isActive !== false);
-    if (tab === 'inactive') return items.filter((s) => s.isActive === false);
-    return items;
-  }, [items, tab]);
+    let rows = items;
+    if (tab === 'active') rows = rows.filter((s) => s.isActive !== false);
+    if (tab === 'inactive') rows = rows.filter((s) => s.isActive === false);
+    if (categoryTab !== 'all') rows = rows.filter((s) => (s.category || 'ibdp') === categoryTab);
+    return rows;
+  }, [items, tab, categoryTab]);
   const list = useListFilter(
     visible,
     (s) => [s.name, s.code, s.category, s.description].filter(Boolean).join(' '),
-    { resetKey: tab }
+    { resetKey: `${tab}-${categoryTab}` }
   );
 
   return (
     <div className="page stack">
-      <ErpPageHeader subtitle="IBDP subjects used across tutors, resources, and bookings." />
+      <ErpPageHeader subtitle="IBDP and hobby / skill classes. Add or edit any class from this list." />
       {error && <div className="error-banner">{error}</div>}
 
       <div className="avail-bar">
@@ -218,6 +233,14 @@ export default function AdminSubjectsPage() {
             { value: 'all', label: `All (${items.length})` },
             { value: 'active', label: 'Active' },
             { value: 'inactive', label: 'Inactive' },
+          ]}
+        />
+        <ErpTabs
+          value={categoryTab}
+          onChange={setCategoryTab}
+          tabs={[
+            { value: 'all', label: 'All types' },
+            ...options('subject_category').map((o) => ({ value: o.value, label: o.label })),
           ]}
         />
         <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search subjects" />
@@ -239,48 +262,47 @@ export default function AdminSubjectsPage() {
         ) : list.noMatch ? (
           <div className="empty">No subjects match that search.</div>
         ) : (
-          <div className="erp-table-scroll">
-            <ErpDataTable>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Code</th>
-                  <th>Levels</th>
-                  <th>Category</th>
-                  <th>Active</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {list.items.map((s) => (
-                  <tr key={s._id} className="erp-row-click" onClick={() => openEdit(s._id)}>
-                    <td>
-                      <strong>{s.name}</strong>
-                      {s.description && <div className="muted">{s.description}</div>}
-                    </td>
-                    <td>{s.code || '—'}</td>
-                    <td>{(s.levels || []).join(', ')}</td>
-                    <td>{s.category || '—'}</td>
-                    <td>
-                      <ErpStatusBadge status={s.isActive === false ? 'inactive' : 'active'}>
-                        {s.isActive === false ? 'no' : 'yes'}
-                      </ErpStatusBadge>
-                    </td>
-                    <td>
-                      <ErpButton
-                        variant="secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEdit(s._id);
-                        }}
-                      >
-                        View
-                      </ErpButton>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </ErpDataTable>
+          <div className="tutor-profile-list" style={{ padding: '0.75rem' }}>
+            {list.items.map((s) => (
+              <article key={s._id} className="tutor-profile-row booking-card">
+                <div className="booking-card-main">
+                  <h3>
+                    {s.name}
+                    {s.category ? <span className="erp-chip">{s.category}</span> : null}
+                  </h3>
+                  <p className="muted">
+                    {s.code || '—'} · {(s.levels || []).join(', ')}
+                  </p>
+                  {s.description ? <p className="muted">{s.description}</p> : null}
+                  <div className="booking-card-status">
+                    <ErpStatusBadge status={s.isActive === false ? 'inactive' : 'active'}>
+                      {s.isActive === false ? 'inactive' : 'active'}
+                    </ErpStatusBadge>
+                  </div>
+                </div>
+                <div className="booking-card-actions">
+                  <ErpButton variant="secondary" onClick={() => openEdit(s._id)}>
+                    Edit
+                  </ErpButton>
+                  <ErpOverflow
+                    items={[
+                      {
+                        label: 'Remove',
+                        danger: true,
+                        onClick: async () => {
+                          try {
+                            await deleteSubject(s._id);
+                            load();
+                          } catch (err) {
+                            setError(err.message);
+                          }
+                        },
+                      },
+                    ]}
+                  />
+                </div>
+              </article>
+            ))}
           </div>
         )}
         {list.total > 0 && <ErpPager {...list.pagerProps} noun="subject" />}

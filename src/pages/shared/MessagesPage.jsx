@@ -8,10 +8,47 @@ import {
   sendMessage,
 } from '../../api';
 import { useAuth } from '../../context/AuthContext';
-import { formatDate } from '../../utils/format';
+import { formatDate, tutorRef } from '../../utils/format';
 import { ErpButton, ErpSearch, ErpTabs, useIsPhone } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
 import { mediaUrl } from '../../utils/mediaUrl';
+
+function linkLabel(url) {
+  if (url.includes('zoom.us')) return 'Open Zoom';
+  if (url.includes('docs.google.com')) return 'Open Google Docs';
+  if (url.includes('excalidraw.com')) return 'Open whiteboard';
+  return url;
+}
+
+function MessageBody({ text, kind }) {
+  const parts = String(text || '').split(/(https?:\/\/[^\s]+)/g);
+  const chip =
+    kind === 'class_links' ? 'Class tools' : kind === 'feedback' ? 'Feedback' : '';
+  return (
+    <div>
+      {chip && <span className="erp-chip" style={{ marginRight: 8 }}>{chip}</span>}
+      {parts.map((part, i) =>
+        part.startsWith('http') ? (
+          <div key={`${part}-${i}`}>
+            <a href={part} target="_blank" rel="noreferrer">
+              {linkLabel(part)}
+            </a>
+          </div>
+        ) : (
+          <span key={`${part}-${i}`}>{part}</span>
+        )
+      )}
+    </div>
+  );
+}
+
+function personLabel(person, viewer) {
+  if (!person) return 'Conversation';
+  if (person.role === 'tutor' && (viewer?.role === 'student' || viewer?.role === 'parent')) {
+    return tutorRef(person);
+  }
+  return person.name || person.phone || tutorRef(person) || 'Contact';
+}
 
 export default function MessagesPage() {
   const phone = useIsPhone();
@@ -79,12 +116,12 @@ export default function MessagesPage() {
     contactTab === 'parents' ? contacts.parents || [] : contactTab === 'tutors' ? contacts.tutors || [] : contacts.students || [];
   const people = useListFilter(
     contactList,
-    (c) => [c.name, c.phone, c.role, c.childName].filter(Boolean).join(' '),
+    (c) => [c.refCode, c.name, c.phone, c.role, c.childName].filter(Boolean).join(' '),
     { resetKey: contactTab }
   );
   const threads = useListFilter(conversations, (c) =>
     (c.participants || [])
-      .map((p) => `${p.name || ''} ${p.role || ''}`)
+      .map((p) => `${p.refCode || ''} ${p.name || ''} ${p.role || ''}`)
       .join(' ')
   );
 
@@ -113,7 +150,7 @@ export default function MessagesPage() {
               style={{ width: '100%', justifyContent: 'flex-start' }}
               onClick={() => startChat(c._id)}
             >
-              {c.name || c.phone || 'Contact'}
+              {personLabel(c, user)}
               {c.role && <span className="erp-chip" style={{ marginLeft: 8 }}>{c.role}</span>}
               {c.childName && <span className="muted"> · parent of {c.childName}</span>}
             </button>
@@ -132,7 +169,7 @@ export default function MessagesPage() {
                 style={{ width: '100%', marginBottom: '0.5rem', justifyContent: 'flex-start' }}
                 onClick={() => openThread(c._id)}
               >
-                {other?.name || 'Conversation'}
+                {personLabel(other, user)}
                 {other?.role && <span className="muted"> · {other.role}</span>}
               </button>
             );
@@ -160,7 +197,7 @@ export default function MessagesPage() {
                     <div key={m._id} style={{ marginBottom: '0.75rem' }}>
                       <strong>{mine ? 'You' : 'Them'}</strong>
                       {m.flagged && <span className="muted"> · contact details hidden</span>}
-                      <div>{m.body}</div>
+                      <MessageBody text={m.body} kind={m.kind} />
                       {!!m.attachments?.length &&
                         m.attachments.map((f) => (
                           <div key={f.url}>

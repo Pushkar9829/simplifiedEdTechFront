@@ -18,11 +18,13 @@ import {
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
 import { money } from '../../utils/format';
-import { resourceTypeOptions, titleCase } from './tutorOptions';
+import { useCatalog } from '../../context/CatalogContext';
+import { titleCase } from './tutorOptions';
 
 export default function TutorResources() {
   const phone = useIsPhone();
   const { user } = useAuth();
+  const { options } = useCatalog();
   const [items, setItems] = useState([]);
   const [filterType, setFilterType] = useState('');
   const [error, setError] = useState('');
@@ -66,7 +68,7 @@ export default function TutorResources() {
         <ErpTabs
           value={filterType || 'all'}
           onChange={(value) => setFilterType(value === 'all' ? '' : value)}
-          tabs={resourceTypeOptions(true).map((o) => ({
+          tabs={options('resource_type', { all: 'All types' }).map((o) => ({
             value: o.value || 'all',
             label: o.label,
           }))}

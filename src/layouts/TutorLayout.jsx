@@ -14,6 +14,7 @@ const baseLinks = [
   { to: '/tutor/courses', label: 'Courses' },
   { to: '/tutor/resources', label: 'Resources' },
   { to: '/tutor/earnings', label: 'Earnings' },
+  { to: '/tutor/payments', label: 'Premium' },
   { to: '/tutor/wallet', label: 'Wallet' },
   { to: '/tutor/verification', label: 'Verification' },
   { to: '/tutor/messages', label: 'Messages' },
@@ -59,7 +60,13 @@ export default function TutorLayout() {
           ],
         },
         { label: 'Students', items: [{ to: '/tutor/students', label: 'Students' }] },
-        { label: 'Money', items: [{ to: '/tutor/earnings', label: 'Earnings' }] },
+        {
+          label: 'Money',
+          items: [
+            { to: '/tutor/earnings', label: 'Earnings' },
+            { to: '/tutor/payments', label: 'Premium' },
+          ],
+        },
         {
           label: 'Account',
           items: [

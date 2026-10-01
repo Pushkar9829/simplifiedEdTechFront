@@ -8,6 +8,7 @@ import { useListFilter } from '../../hooks/useListFilter';
 
 export default function PaymentsPage({ showPlans = true }) {
   const location = useLocation();
+  const isTutor = location.pathname.startsWith('/tutor');
   const walletPath = location.pathname.replace(/\/payments\/?$/, '/wallet');
   const [payable, setPayable] = useState([]);
   const [history, setHistory] = useState([]);
@@ -16,7 +17,7 @@ export default function PaymentsPage({ showPlans = true }) {
   const [error, setError] = useState('');
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('due');
+  const [tab, setTab] = useState(isTutor ? 'plans' : 'due');
 
   const load = async () => {
     setLoading(true);
@@ -52,7 +53,7 @@ export default function PaymentsPage({ showPlans = true }) {
   return (
     <div className="page stack">
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ margin: 0 }}>Payments</h1>
+        <h1 style={{ margin: 0 }}>{isTutor ? 'Tutor Premium' : 'Payments'}</h1>
         <Link to={walletPath} className="btn secondary">
           Open wallet
         </Link>
@@ -81,7 +82,7 @@ export default function PaymentsPage({ showPlans = true }) {
           onChange={setTab}
           tabs={[
             { value: 'due', label: `Pay now (${payable.length})` },
-            ...(showPlans ? [{ value: 'plans', label: 'Plans' }] : []),
+            ...(showPlans ? [{ value: 'plans', label: isTutor ? 'Premium plans' : 'Plans' }] : []),
             { value: 'history', label: 'History' },
           ]}
         />
@@ -109,65 +110,57 @@ export default function PaymentsPage({ showPlans = true }) {
         ) : dueList.noMatch ? (
           <div className="empty">No invoices match that search.</div>
         ) : (
-          <table className="erp-data-table table">
-            <thead>
-              <tr>
-                <th>Description</th>
-                <th>Amount</th>
-                <th>Status</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {dueList.items.map((p) => (
-                <tr key={p._id}>
-                  <td>{p.description || 'Invoice'}</td>
-                  <td>{money(p.amount, p.currency)}</td>
-                  <td>
+          <div className="tutor-profile-list">
+            {dueList.items.map((p) => (
+              <article key={p._id} className="tutor-profile-row booking-card">
+                <div className="booking-card-main">
+                  <h3>{p.description || 'Invoice'}</h3>
+                  <p className="muted">{money(p.amount, p.currency)}</p>
+                  <div className="booking-card-status">
                     <span className={statusBadge(p.status)}>{titleCase(p.status)}</span>
-                  </td>
-                  <td>
-                    {p.status === 'pending' || p.status === 'failed' ? (
-                      <div className="row">
-                        <button
-                          className="btn"
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              await payInvoice(p._id, 'manual');
-                              setMsg('Payment submitted for admin confirmation');
-                              load();
-                            } catch (err) {
-                              setError(err.message);
-                            }
-                          }}
-                        >
-                          Pay
-                        </button>
-                        <button
-                          className="btn secondary"
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              await payInvoice(p._id, 'wallet');
-                              setMsg('Paid from wallet (25% platform / 75% tutor)');
-                              load();
-                            } catch (err) {
-                              setError(err.message);
-                            }
-                          }}
-                        >
-                          Wallet
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="muted">Awaiting confirmation</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+                <div className="booking-card-actions">
+                  {p.status === 'pending' || p.status === 'failed' ? (
+                    <>
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await payInvoice(p._id, 'manual');
+                            setMsg('Payment submitted for admin confirmation');
+                            load();
+                          } catch (err) {
+                            setError(err.message);
+                          }
+                        }}
+                      >
+                        Pay
+                      </button>
+                      <button
+                        className="btn secondary"
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await payInvoice(p._id, 'wallet');
+                            setMsg('Paid from wallet (25% platform / 75% tutor)');
+                            load();
+                          } catch (err) {
+                            setError(err.message);
+                          }
+                        }}
+                      >
+                        Wallet
+                      </button>
+                    </>
+                  ) : (
+                    <span className="muted">Awaiting confirmation</span>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
         )}
         {dueList.total > 0 && <ErpPager {...dueList.pagerProps} noun="invoice" />}
       </section>
@@ -175,7 +168,12 @@ export default function PaymentsPage({ showPlans = true }) {
 
       {tab === 'plans' && showPlans && (
         <section className="erp-card stack">
-          <h2>Subscription plans</h2>
+          <h2>{isTutor ? 'Rank higher in student search' : 'Subscription plans'}</h2>
+          {isTutor && (
+            <p className="muted" style={{ marginTop: 0 }}>
+              Premium tutors appear first, with a Premium badge. Pay the invoice after you subscribe.
+            </p>
+          )}
           {!plans.length ? (
             <div className="empty">No plans available.</div>
           ) : (
@@ -195,6 +193,9 @@ export default function PaymentsPage({ showPlans = true }) {
                     <strong>{money(plan.price, plan.currency)}</strong>
                     <span className="muted"> · {titleCase(plan.billingCycle)}</span>
                   </p>
+                  {plan.rankBoost > 0 && (
+                    <p className="muted">Search rank boost +{plan.rankBoost}</p>
+                  )}
                   <button
                     className="btn secondary"
                     type="button"
@@ -227,28 +228,21 @@ export default function PaymentsPage({ showPlans = true }) {
         ) : histList.noMatch ? (
           <div className="empty">No payments match that search.</div>
         ) : (
-          <table className="erp-data-table table">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Description</th>
-                <th>Amount</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {histList.items.map((p) => (
-                <tr key={p._id}>
-                  <td>{formatDate(p.createdAt)}</td>
-                  <td>{p.description || '—'}</td>
-                  <td>{money(p.amount, p.currency)}</td>
-                  <td>
+          <div className="tutor-profile-list">
+            {histList.items.map((p) => (
+              <article key={p._id} className="tutor-profile-row booking-card">
+                <div className="booking-card-main">
+                  <h3>{p.description || 'Payment'}</h3>
+                  <p className="muted">
+                    {formatDate(p.createdAt)} · {money(p.amount, p.currency)}
+                  </p>
+                  <div className="booking-card-status">
                     <span className={statusBadge(p.status)}>{titleCase(p.status)}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
         )}
         {histList.total > 0 && <ErpPager {...histList.pagerProps} noun="payment" />}
       </section>

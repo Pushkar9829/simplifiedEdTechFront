@@ -3,6 +3,9 @@ import {
   createBoard,
   createClassLevel,
   createCountry,
+  deleteBoard,
+  deleteClassLevel,
+  deleteCountry,
   listBoards,
   listClassLevels,
   listCountries,
@@ -13,8 +16,10 @@ import {
 import {
   ErpButton,
   ErpCard,
+  ErpConfirm,
   ErpDataTable,
   ErpModal,
+  ErpOverflow,
   ErpPager,
   ErpPageHeader,
   ErpSearch,
@@ -48,6 +53,7 @@ export default function AdminCatalogPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   const load = async () => {
     try {
@@ -187,12 +193,14 @@ export default function AdminCatalogPage() {
                     <th>Currency</th>
                     <th>Default timezone</th>
                     <th>Status</th>
+                    <th />
                   </tr>
                 ) : (
                   <tr>
                     <th>Name</th>
                     <th>Country</th>
                     <th>Status</th>
+                    <th />
                   </tr>
                 )}
               </thead>
@@ -220,6 +228,14 @@ export default function AdminCatalogPage() {
                       <ErpStatusBadge status={row.isActive ? 'active' : 'inactive'}>
                         {row.isActive ? 'active' : 'inactive'}
                       </ErpStatusBadge>
+                    </td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <ErpOverflow
+                        items={[
+                          { label: 'Edit', onClick: () => openEditor(row) },
+                          { label: 'Remove', danger: true, onClick: () => setPendingDelete(row) },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -306,6 +322,28 @@ export default function AdminCatalogPage() {
           </div>
         ) : null}
       </ErpModal>
+
+      <ErpConfirm
+        open={Boolean(pendingDelete)}
+        title="Remove catalog row"
+        message={pendingDelete ? `Remove ${pendingDelete.name}? This list is used across the app.` : ''}
+        confirmLabel="Remove"
+        danger
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={async () => {
+          try {
+            if (tab === 'countries') await deleteCountry(pendingDelete._id);
+            else if (tab === 'boards') await deleteBoard(pendingDelete._id);
+            else await deleteClassLevel(pendingDelete._id);
+            setPendingDelete(null);
+            setMsg('Removed');
+            load();
+          } catch (err) {
+            setError(err.message);
+            setPendingDelete(null);
+          }
+        }}
+      />
     </div>
   );
 }

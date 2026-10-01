@@ -58,7 +58,7 @@ export default function TutorProjectDetailPage() {
         <dl className="erp-detail-grid">
           <dt>Student</dt>
           <dd>{project.studentUserId?.name || project.studentUserId?.phone || '—'}</dd>
-          <dt>Price</dt>
+          <dt>Fee charged to student</dt>
           <dd>{money(project.price, project.currency)}</dd>
           <dt>Delivery</dt>
           <dd>{formatDate(project.deliveryDate)}</dd>

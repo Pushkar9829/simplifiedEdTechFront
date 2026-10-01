@@ -3,7 +3,6 @@ import { adminPayments, adminSetPaymentStatus } from '../../api';
 import {
   ErpButton,
   ErpCard,
-  ErpDataTable,
   ErpModal,
   ErpPager,
   ErpPageHeader,
@@ -91,41 +90,29 @@ export default function AdminPaymentsPage() {
         ) : list.noMatch ? (
           <div className="empty">No payments match that search.</div>
         ) : (
-          <div className="erp-table-scroll">
-            <ErpDataTable>
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Payer</th>
-                  <th>Amount</th>
-                  <th>Status</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {list.items.map((p) => (
-                  <tr key={p._id} className="erp-row-click" onClick={() => openEdit(p._id)}>
-                    <td>{formatDate(p.createdAt)}</td>
-                    <td>{p.payerUserId?.phone || p.payerUserId?.name || '—'}</td>
-                    <td>{money(p.amount, p.currency)}</td>
-                    <td>
-                      <ErpStatusBadge status={p.status}>{p.status}</ErpStatusBadge>
-                    </td>
-                    <td>
-                      <ErpButton
-                        variant="secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEdit(p._id);
-                        }}
-                      >
-                        View
-                      </ErpButton>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </ErpDataTable>
+          <div className="tutor-profile-list" style={{ padding: '0.75rem' }}>
+            {list.items.map((p) => (
+              <article key={p._id} className="tutor-profile-row booking-card">
+                <div className="booking-card-main">
+                  <h3>
+                    {money(p.amount, p.currency)}
+                    {p.payerUserId?.role ? <span className="erp-chip">{p.payerUserId.role}</span> : null}
+                  </h3>
+                  <p className="muted">
+                    {p.payerUserId?.name || p.payerUserId?.phone || '—'} · {formatDate(p.createdAt)}
+                  </p>
+                  <p className="muted">{p.description || 'Payment'}</p>
+                  <div className="booking-card-status">
+                    <ErpStatusBadge status={p.status}>{p.status}</ErpStatusBadge>
+                  </div>
+                </div>
+                <div className="booking-card-actions">
+                  <ErpButton variant="secondary" onClick={() => openEdit(p._id)}>
+                    View
+                  </ErpButton>
+                </div>
+              </article>
+            ))}
           </div>
         )}
         {list.total > 0 && <ErpPager {...list.pagerProps} noun="payment" />}

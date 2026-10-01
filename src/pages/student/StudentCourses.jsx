@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { listMyEnrollments } from '../../api';
 import {
   ErpCard,
-  ErpDataTable,
   ErpPager,
   ErpPageHeader,
   ErpSearch,
@@ -10,7 +9,7 @@ import {
   ErpTabs,
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
-import { money } from '../../utils/format';
+import { money, tutorRef } from '../../utils/format';
 import { titleCase } from './studentOptions';
 
 export default function StudentCourses() {
@@ -28,7 +27,7 @@ export default function StudentCourses() {
   const list = useListFilter(
     visible,
     (e) =>
-      [e.courseId?.title, e.courseId?.subjectId?.name, e.courseId?.tutorUserId?.name, e.status]
+      [e.courseId?.title, e.courseId?.subjectId?.name, e.courseId?.tutorUserId?.refCode, e.status]
         .filter(Boolean)
         .join(' '),
     { resetKey: tab }
@@ -58,34 +57,21 @@ export default function StudentCourses() {
         ) : list.noMatch ? (
           <div className="empty">No courses match that search.</div>
         ) : (
-          <div className="erp-table-scroll">
-            <ErpDataTable>
-              <thead>
-                <tr>
-                  <th>Course</th>
-                  <th>Tutor</th>
-                  <th>Price</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.items.map((e) => (
-                  <tr key={e._id}>
-                    <td>
-                      <strong>{e.courseId?.title || '—'}</strong>
-                      <div className="muted">{e.courseId?.subjectId?.name}</div>
-                    </td>
-                    <td>{e.courseId?.tutorUserId?.name || '—'}</td>
-                    <td>
-                      {e.courseId?.price ? money(e.courseId.price, e.courseId.currency) : 'Free'}
-                    </td>
-                    <td>
-                      <ErpStatusBadge status={e.status}>{titleCase(e.status)}</ErpStatusBadge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </ErpDataTable>
+          <div className="tutor-profile-list" style={{ padding: '0.75rem' }}>
+            {list.items.map((e) => (
+              <article key={e._id} className="tutor-profile-row booking-card">
+                <div className="booking-card-main">
+                  <h3>{e.courseId?.title || 'Course'}</h3>
+                  <p className="muted">
+                    {e.courseId?.subjectId?.name || 'Subject'} · {tutorRef(e.courseId?.tutorUserId)} ·{' '}
+                    {e.courseId?.price ? money(e.courseId.price, e.courseId.currency) : 'Free'}
+                  </p>
+                  <div className="booking-card-status">
+                    <ErpStatusBadge status={e.status}>{titleCase(e.status)}</ErpStatusBadge>
+                  </div>
+                </div>
+              </article>
+            ))}
           </div>
         )}
         {list.total > 0 && <ErpPager {...list.pagerProps} noun="course" />}

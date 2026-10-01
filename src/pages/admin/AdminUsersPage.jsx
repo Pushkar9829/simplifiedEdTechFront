@@ -3,7 +3,6 @@ import { adminSetUserStatus, adminUsers } from '../../api';
 import {
   ErpButton,
   ErpCard,
-  ErpDataTable,
   ErpModal,
   ErpPageHeader,
   ErpPager,
@@ -115,41 +114,26 @@ export default function AdminUsersPage() {
         ) : !users.length ? (
           <div className="empty">No users found.</div>
         ) : (
-          <div className="erp-table-scroll">
-            <ErpDataTable>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Phone</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => (
-                  <tr key={u._id} className="erp-row-click" onClick={() => openEdit(u._id)}>
-                    <td>{u.name || '—'}</td>
-                    <td>{u.phone}</td>
-                    <td>{u.role}</td>
-                    <td>
-                      <ErpStatusBadge status={u.status}>{u.status}</ErpStatusBadge>
-                    </td>
-                    <td>
-                      <ErpButton
-                        variant="secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEdit(u._id);
-                        }}
-                      >
-                        View
-                      </ErpButton>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </ErpDataTable>
+          <div className="tutor-profile-list" style={{ padding: '0.75rem' }}>
+            {users.map((u) => (
+              <article key={u._id} className="tutor-profile-row booking-card">
+                <div className="booking-card-main">
+                  <h3>
+                    {u.name || 'User'}
+                    <span className="erp-chip">{u.role}</span>
+                  </h3>
+                  <p className="muted">{u.phone}</p>
+                  <div className="booking-card-status">
+                    <ErpStatusBadge status={u.status}>{u.status}</ErpStatusBadge>
+                  </div>
+                </div>
+                <div className="booking-card-actions">
+                  <ErpButton variant="secondary" onClick={() => openEdit(u._id)}>
+                    View
+                  </ErpButton>
+                </div>
+              </article>
+            ))}
           </div>
         )}
         <ErpPager

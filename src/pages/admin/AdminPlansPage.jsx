@@ -3,7 +3,6 @@ import { createPlan, listPlans, updatePlan } from '../../api';
 import {
   ErpButton,
   ErpCard,
-  ErpDataTable,
   ErpModal,
   ErpPager,
   ErpPageHeader,
@@ -14,7 +13,7 @@ import {
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
 import { money } from '../../utils/format';
-import { BILLING_CYCLE_OPTIONS } from './adminOptions';
+import { useCatalog } from '../../context/CatalogContext';
 import { useAdminModalQuery } from './useAdminModalQuery';
 
 const emptyForm = {
@@ -24,10 +23,13 @@ const emptyForm = {
   currency: 'USD',
   billingCycle: 'monthly',
   features: '',
+  audience: 'student',
+  rankBoost: 0,
   isActive: true,
 };
 
 function PlanForm({ id, onSaved, onCancel }) {
+  const { options } = useCatalog();
   const isEdit = Boolean(id);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
@@ -60,6 +62,8 @@ function PlanForm({ id, onSaved, onCancel }) {
             currency: plan.currency || 'USD',
             billingCycle: plan.billingCycle || 'monthly',
             features: (plan.features || []).join(', '),
+            audience: plan.audience || 'student',
+            rankBoost: plan.rankBoost || 0,
             isActive: plan.isActive !== false,
           });
         }
@@ -84,6 +88,8 @@ function PlanForm({ id, onSaved, onCancel }) {
       .split(',')
       .map((f) => f.trim())
       .filter(Boolean),
+    audience: form.audience,
+    rankBoost: Number(form.rankBoost || 0),
     isActive: form.isActive,
   });
 
@@ -138,9 +144,28 @@ function PlanForm({ id, onSaved, onCancel }) {
       <ErpSelect
         label="Billing cycle"
         value={form.billingCycle}
-        options={BILLING_CYCLE_OPTIONS}
+        options={options('billing_cycle')}
         onChange={(e) => setForm((f) => ({ ...f, billingCycle: e.target.value }))}
       />
+      <ErpSelect
+        label="Who can buy"
+        value={form.audience}
+        options={options('audience').filter((o) => o.value !== 'all')}
+        onChange={(e) => setForm((f) => ({ ...f, audience: e.target.value }))}
+      />
+      {form.audience === 'tutor' && (
+        <div className="field">
+          <label>Search rank boost</label>
+          <input
+            className="erp-search"
+            type="number"
+            min="0"
+            max="100"
+            value={form.rankBoost}
+            onChange={(e) => setForm((f) => ({ ...f, rankBoost: e.target.value }))}
+          />
+        </div>
+      )}
       <div className="field">
         <label>Description</label>
         <input
@@ -206,13 +231,13 @@ export default function AdminPlansPage() {
     if (tab === 'inactive') return items.filter((p) => !p.isActive);
     return items;
   }, [items, tab]);
-  const list = useListFilter(visible, (p) => [p.name, p.description, p.billingCycle].filter(Boolean).join(' '), {
+  const list = useListFilter(visible, (p) => [p.name, p.description, p.billingCycle, p.audience].filter(Boolean).join(' '), {
     resetKey: tab,
   });
 
   return (
     <div className="page stack">
-      <ErpPageHeader subtitle="Subscription plans sold to students and parents." />
+      <ErpPageHeader subtitle="Student passes and tutor Premium plans that boost search ranking." />
       {error && <div className="error-banner">{error}</div>}
 
       <div className="avail-bar">
@@ -244,46 +269,32 @@ export default function AdminPlansPage() {
         ) : list.noMatch ? (
           <div className="empty">No plans match that search.</div>
         ) : (
-          <div className="erp-table-scroll">
-            <ErpDataTable>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Price</th>
-                  <th>Cycle</th>
-                  <th>Active</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {list.items.map((p) => (
-                  <tr key={p._id} className="erp-row-click" onClick={() => openEdit(p._id)}>
-                    <td>
-                      <strong>{p.name}</strong>
-                      <div className="muted">{p.description}</div>
-                    </td>
-                    <td>{money(p.price, p.currency)}</td>
-                    <td>{p.billingCycle}</td>
-                    <td>
-                      <ErpStatusBadge status={p.isActive ? 'active' : 'inactive'}>
-                        {p.isActive ? 'yes' : 'no'}
-                      </ErpStatusBadge>
-                    </td>
-                    <td>
-                      <ErpButton
-                        variant="secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEdit(p._id);
-                        }}
-                      >
-                        View
-                      </ErpButton>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </ErpDataTable>
+          <div className="tutor-profile-list" style={{ padding: '0.75rem' }}>
+            {list.items.map((p) => (
+              <article key={p._id} className="tutor-profile-row booking-card">
+                <div className="booking-card-main">
+                  <h3>
+                    {p.name}
+                    <span className="erp-chip">{p.audience || 'student'}</span>
+                  </h3>
+                  <p className="muted">
+                    {money(p.price, p.currency)} · {p.billingCycle}
+                    {p.rankBoost ? ` · +${p.rankBoost} rank` : ''}
+                  </p>
+                  {p.description ? <p className="muted">{p.description}</p> : null}
+                  <div className="booking-card-status">
+                    <ErpStatusBadge status={p.isActive ? 'active' : 'inactive'}>
+                      {p.isActive ? 'active' : 'inactive'}
+                    </ErpStatusBadge>
+                  </div>
+                </div>
+                <div className="booking-card-actions">
+                  <ErpButton variant="secondary" onClick={() => openEdit(p._id)}>
+                    Edit
+                  </ErpButton>
+                </div>
+              </article>
+            ))}
           </div>
         )}
         {list.total > 0 && <ErpPager {...list.pagerProps} noun="plan" />}

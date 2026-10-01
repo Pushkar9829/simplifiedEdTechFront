@@ -31,8 +31,8 @@ import {
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
 import { formatInZone, money } from '../../utils/format';
-import { DELIVERY_OPTIONS } from '../student/studentOptions';
-import { browserTimezone, LEVEL_OPTIONS, subjectOptions, timezoneOptions } from './tutorOptions';
+import { useCatalog } from '../../context/CatalogContext';
+import { browserTimezone, subjectOptions, timezoneOptions } from './tutorOptions';
 
 function asList(x) {
   return Array.isArray(x) ? x : x?.items || [];
@@ -57,6 +57,9 @@ function emptySlot(location, timezone) {
 export default function TutorAvailability() {
   const phone = useIsPhone();
   const { user, profile } = useAuth();
+  const { options } = useCatalog();
+  const LEVEL_OPTIONS = options('subject_level');
+  const DELIVERY_OPTIONS = options('delivery_mode');
   const [tab, setTab] = useState('offerings');
   const [view, setView] = useState('list');
   const [modeFilter, setModeFilter] = useState('all');

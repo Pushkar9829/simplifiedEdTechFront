@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { listChildren } from '../../api';
 import { titleCase } from './parentOptions';
-import { ErpPager, ErpSearch } from '../../components/erp';
+import { ErpButton, ErpCard, ErpPager, ErpPageHeader, ErpSearch, ErpStatusBadge, ErpTabs } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
 
 export default function ParentChildrenPage() {
@@ -10,6 +10,7 @@ export default function ParentChildrenPage() {
   const [children, setChildren] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('all');
 
   useEffect(() => {
     listChildren()
@@ -18,75 +19,74 @@ export default function ParentChildrenPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const list = useListFilter(children, (c) =>
-    [c.studentUserId?.name, c.studentUserId?.phone, c.relationship, c.status].filter(Boolean).join(' ')
+  const visible =
+    tab === 'all' ? children : children.filter((c) => (c.status || 'active') === tab);
+  const list = useListFilter(
+    visible,
+    (c) => [c.studentUserId?.name, c.studentUserId?.phone, c.relationship, c.status].filter(Boolean).join(' '),
+    { resetKey: tab }
   );
 
   return (
     <div className="page stack">
-      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ margin: 0 }}>Children</h1>
-        <Link to="/parent/children/link" className="btn">
-          Link child
-        </Link>
-      </div>
-
-      {error && <div className="error-banner">{error}</div>}
-      <div className="avail-bar">
-        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search children" />
-        <div className="avail-bar-actions">
-          <Link to="/parent/children/link" className="erp-btn-primary">
+      <ErpPageHeader
+        subtitle="Linked students you can book, pay, and monitor."
+        actions={
+          <Link to="/parent/children/link" className="btn">
             Link child
           </Link>
-        </div>
+        }
+      />
+
+      {error && <div className="error-banner">{error}</div>}
+
+      <div className="avail-bar">
+        <ErpTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'all', label: `All (${children.length})` },
+            { value: 'active', label: 'Active' },
+            { value: 'pending', label: 'Pending' },
+          ]}
+        />
+        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search children" />
       </div>
 
-      <div className="erp-card">
+      <ErpCard className="erp-card-flush">
         {loading ? (
           <div className="empty">Loading…</div>
         ) : !children.length ? (
           <div className="empty">
-            No linked children.{' '}
-            <Link to="/parent/children/link">Link your first child</Link>
+            No linked children. <Link to="/parent/children/link">Link your first child</Link>
           </div>
         ) : list.noMatch ? (
           <div className="empty">No children match that search.</div>
         ) : (
-          <table className="erp-data-table table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Relationship</th>
-                <th>Status</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {list.items.map((c) => (
-                <tr key={c._id}>
-                  <td>
-                    <strong>{c.studentUserId?.name || '—'}</strong>
-                  </td>
-                  <td>{c.studentUserId?.phone || '—'}</td>
-                  <td>{titleCase(c.relationship || 'parent')}</td>
-                  <td>{titleCase(c.status || 'active')}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn secondary"
-                      onClick={() => navigate('/parent')}
-                    >
-                      View dashboard
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="tutor-profile-list" style={{ padding: '0.75rem' }}>
+            {list.items.map((c) => (
+              <article key={c._id} className="tutor-profile-row booking-card">
+                <div className="booking-card-main">
+                  <h3>{c.studentUserId?.name || 'Student'}</h3>
+                  <p className="muted">
+                    {c.studentUserId?.phone || '—'} · {titleCase(c.relationship || 'parent')}
+                  </p>
+                  <div className="booking-card-status">
+                    <ErpStatusBadge status={c.status || 'active'}>{titleCase(c.status || 'active')}</ErpStatusBadge>
+                  </div>
+                </div>
+                <div className="booking-card-actions">
+                  <ErpButton variant="secondary" onClick={() => navigate('/parent')}>
+                    Dashboard
+                  </ErpButton>
+                  <ErpButton onClick={() => navigate('/parent/tutors')}>Find tutor</ErpButton>
+                </div>
+              </article>
+            ))}
+          </div>
         )}
         {list.total > 0 && <ErpPager {...list.pagerProps} noun="child" />}
-      </div>
+      </ErpCard>
     </div>
   );
 }

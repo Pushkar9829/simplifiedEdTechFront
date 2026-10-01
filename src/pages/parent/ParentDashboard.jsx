@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listChildren, parentDashboard } from '../../api';
-import { ErpSelect } from '../../components/erp';
-import { formatDate, money, statusBadge } from '../../utils/format';
+import { ErpCard, ErpPageHeader, ErpSelect, ErpStatusBadge, ErpTabs } from '../../components/erp';
+import { formatDate, money, tutorRef } from '../../utils/format';
 import { childOptions, titleCase } from './parentOptions';
 
 function CountRows({ obj, empty = 'No data.' }) {
@@ -23,6 +23,7 @@ export default function ParentDashboard() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingDash, setLoadingDash] = useState(false);
+  const [tab, setTab] = useState('overview');
 
   useEffect(() => {
     setLoading(true);
@@ -52,36 +53,46 @@ export default function ParentDashboard() {
 
   return (
     <div className="page stack">
-      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 style={{ margin: 0 }}>Parent dashboard</h1>
-          <p className="muted" style={{ margin: '0.25rem 0 0' }}>
-            Attendance, progress, homework, and payments for linked children
-          </p>
-        </div>
-        <div className="row">
-          <Link to="/parent/tutors" className="btn">
-            Find a tutor
-          </Link>
-          <Link to="/parent/children/link" className="btn secondary">
-            Link child
-          </Link>
-        </div>
-      </div>
+      <ErpPageHeader
+        subtitle="Attendance, progress, homework, and payments for linked children"
+        actions={
+          <div className="row">
+            <Link to="/parent/tutors" className="btn">
+              Find a tutor
+            </Link>
+            <Link to="/parent/children/link" className="btn secondary">
+              Link child
+            </Link>
+          </div>
+        }
+      />
 
       {error && <div className="error-banner">{error}</div>}
 
       {loading ? (
-        <div className="erp-card empty">Loading…</div>
+        <ErpCard>
+          <div className="empty">Loading…</div>
+        </ErpCard>
       ) : !children.length ? (
-        <div className="erp-card empty">
-          No linked children yet.{' '}
-          <Link to="/parent/children/link">Link a child</Link> with their registered phone.
-        </div>
+        <ErpCard>
+          <div className="empty">
+            No linked children yet. <Link to="/parent/children/link">Link a child</Link> with their registered phone.
+          </div>
+        </ErpCard>
       ) : (
-        <div className="erp-card">
+        <div className="avail-bar">
+          <ErpTabs
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { value: 'overview', label: 'Overview' },
+              { value: 'classes', label: 'Classes' },
+              { value: 'homework', label: 'Homework' },
+              { value: 'payments', label: 'Payments' },
+            ]}
+          />
           <ErpSelect
-            label="Child"
+            inline
             value={selected}
             options={childOptions(children)}
             onChange={(e) => setSelected(e.target.value)}
@@ -91,7 +102,7 @@ export default function ParentDashboard() {
 
       {loadingDash && <div className="empty">Loading child dashboard…</div>}
 
-      {data && !loadingDash && (
+      {data && !loadingDash && tab === 'overview' && (
         <>
           <div className="grid three">
             <div className="stat">
@@ -119,119 +130,88 @@ export default function ParentDashboard() {
               <div className="value">{money(summary?.pendingTotal)}</div>
             </div>
           </div>
-
           <div className="grid two">
-            <section className="erp-card stack">
-              <h2>Attendance</h2>
+            <ErpCard className="stack">
+              <h2 style={{ margin: 0 }}>Attendance</h2>
               <CountRows obj={data.attendance} />
-            </section>
-            <section className="erp-card stack">
-              <h2>Bookings by status</h2>
+            </ErpCard>
+            <ErpCard className="stack">
+              <h2 style={{ margin: 0 }}>Bookings by status</h2>
               <CountRows obj={data.bookingByStatus} />
-            </section>
+            </ErpCard>
           </div>
-
-          <div className="grid two">
-            <section className="erp-card stack">
-              <div className="row" style={{ justifyContent: 'space-between' }}>
-                <h2 style={{ margin: 0 }}>Upcoming classes</h2>
-              </div>
-              {!(data.upcomingClasses || []).length && (
-                <div className="empty">No upcoming classes.</div>
-              )}
-              {(data.upcomingClasses || []).map((b) => (
-                <div key={b._id} className="row" style={{ justifyContent: 'space-between' }}>
-                  <span>
-                    {b.subjectId?.name || 'Class'} · {b.tutorUserId?.name || 'Tutor'}
-                  </span>
-                  <span className="muted">{formatDate(b.startAt)}</span>
-                </div>
-              ))}
-            </section>
-            <section className="erp-card stack">
-              <h2>Homework</h2>
-              <CountRows obj={data.homeworkByStatus} empty="No homework." />
-              <div style={{ marginTop: '0.45rem' }}>
-                {(data.homework || []).slice(0, 5).map((h) => (
-                  <div key={h._id} className="row" style={{ justifyContent: 'space-between' }}>
-                    <span>{h.title}</span>
-                    <span className={statusBadge(h.status)}>{h.status}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          <div className="grid two">
-            <section className="erp-card stack">
-              <div className="row" style={{ justifyContent: 'space-between' }}>
-                <h2 style={{ margin: 0 }}>Payments</h2>
-                <Link to="/parent/payments" className="btn secondary">
-                  All payments
-                </Link>
-              </div>
-              <CountRows obj={data.paymentsByStatus} empty="No payments." />
-              {(data.payments || []).slice(0, 5).map((p) => (
-                <div key={p._id} className="row" style={{ justifyContent: 'space-between' }}>
-                  <span>{money(p.amount, p.currency)}</span>
-                  <span className={statusBadge(p.status)}>{p.status}</span>
-                </div>
-              ))}
-            </section>
-            <section className="erp-card stack">
-              <h2>Academic snapshot</h2>
-              <p>
-                <span className="muted">Weak topics:</span>{' '}
-                {(data.progress?.weakTopics || []).join(', ') || '—'}
-              </p>
-              <p>
-                <span className="muted">Strong topics:</span>{' '}
-                {(data.progress?.strongTopics || []).join(', ') || '—'}
-              </p>
-              <h3>Predicted grades</h3>
-              {!Object.keys(data.predictedGrades || {}).length ? (
-                <div className="empty">No predicted grades yet.</div>
-              ) : (
-                Object.entries(data.predictedGrades).map(([subject, grade]) => (
-                  <div key={subject} className="row" style={{ justifyContent: 'space-between' }}>
-                    <span>{subject}</span>
-                    <strong>{grade}</strong>
-                  </div>
-                ))
-              )}
-            </section>
-          </div>
-
-          {!!(data.recentClasses || []).length && (
-            <section className="erp-card">
-              <h2>Recent classes</h2>
-              <table className="erp-data-table table">
-                <thead>
-                  <tr>
-                    <th>When</th>
-                    <th>Subject</th>
-                    <th>Status</th>
-                    <th>Attendance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.recentClasses.map((b) => (
-                    <tr key={b._id}>
-                      <td>{formatDate(b.startAt)}</td>
-                      <td>{b.subjectId?.name || '—'}</td>
-                      <td>
-                        <span className={statusBadge(b.status)}>{b.status}</span>
-                      </td>
-                      <td>
-                        <span className={statusBadge(b.attendance)}>{b.attendance}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
-          )}
         </>
+      )}
+
+      {data && !loadingDash && tab === 'classes' && (
+        <ErpCard className="erp-card-flush">
+          <div className="tutor-profile-list" style={{ padding: '0.75rem' }}>
+            {!(data.upcomingClasses || []).length && !(data.recentClasses || []).length && (
+              <div className="empty">No classes yet.</div>
+            )}
+            {(data.upcomingClasses || []).map((b) => (
+              <article key={b._id} className="tutor-profile-row booking-card">
+                <div className="booking-card-main">
+                  <h3>{b.subjectId?.name || 'Class'}</h3>
+                  <p className="muted">
+                    {tutorRef(b.tutorUserId)} · {formatDate(b.startAt)}
+                  </p>
+                </div>
+                <ErpStatusBadge status="confirmed">Upcoming</ErpStatusBadge>
+              </article>
+            ))}
+            {(data.recentClasses || []).map((b) => (
+              <article key={b._id} className="tutor-profile-row booking-card">
+                <div className="booking-card-main">
+                  <h3>{b.subjectId?.name || 'Class'}</h3>
+                  <p className="muted">{formatDate(b.startAt)}</p>
+                  <div className="booking-card-status">
+                    <ErpStatusBadge status={b.status}>{titleCase(b.status)}</ErpStatusBadge>
+                    <span className="muted">{titleCase(b.attendance)}</span>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </ErpCard>
+      )}
+
+      {data && !loadingDash && tab === 'homework' && (
+        <ErpCard className="erp-card-flush">
+          <div className="tutor-profile-list" style={{ padding: '0.75rem' }}>
+            <CountRows obj={data.homeworkByStatus} empty="No homework." />
+            {(data.homework || []).slice(0, 8).map((h) => (
+              <article key={h._id} className="tutor-profile-row booking-card">
+                <div className="booking-card-main">
+                  <h3>{h.title}</h3>
+                </div>
+                <ErpStatusBadge status={h.status}>{titleCase(h.status)}</ErpStatusBadge>
+              </article>
+            ))}
+          </div>
+        </ErpCard>
+      )}
+
+      {data && !loadingDash && tab === 'payments' && (
+        <ErpCard className="erp-card-flush">
+          <div className="tutor-profile-list" style={{ padding: '0.75rem' }}>
+            <div className="row" style={{ justifyContent: 'space-between', padding: '0 0.25rem' }}>
+              <CountRows obj={data.paymentsByStatus} empty="No payments." />
+              <Link to="/parent/payments" className="btn secondary">
+                All payments
+              </Link>
+            </div>
+            {(data.payments || []).slice(0, 8).map((p) => (
+              <article key={p._id} className="tutor-profile-row booking-card">
+                <div className="booking-card-main">
+                  <h3>{money(p.amount, p.currency)}</h3>
+                  <p className="muted">{p.description || 'Class payment'}</p>
+                </div>
+                <ErpStatusBadge status={p.status}>{titleCase(p.status)}</ErpStatusBadge>
+              </article>
+            ))}
+          </div>
+        </ErpCard>
       )}
     </div>
   );

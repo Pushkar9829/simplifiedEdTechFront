@@ -147,41 +147,31 @@ export default function AdminVerificationsPage() {
         ) : list.noMatch ? (
           <div className="empty">No verifications match that search.</div>
         ) : (
-          <div className="erp-table-scroll">
-            <ErpDataTable>
-              <thead>
-                <tr>
-                  <th>Tutor</th>
-                  <th>Phone</th>
-                  <th>Documents</th>
-                  <th>References</th>
-                  <th>Status</th>
-                  <th>Submitted</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.items.map((v) => {
-                  const refs = v.references || [];
-                  return (
-                    <tr key={v._id} className="erp-row-click" onClick={() => openEdit(v._id)}>
-                      <td>
-                        <strong>{v.tutorUserId?.name || v.tutorUserId?.phone || 'Tutor'}</strong>
-                        {v.notes && <div className="muted">{v.notes}</div>}
-                      </td>
-                      <td>{v.tutorUserId?.phone || '—'}</td>
-                      <td>{allDocs(v).length}</td>
-                      <td>
-                        {refs.filter((r) => r.otpVerified).length} / {refs.length} verified
-                      </td>
-                      <td>
-                        <ErpStatusBadge status={v.status}>{v.status}</ErpStatusBadge>
-                      </td>
-                      <td>{formatDate(v.submittedAt || v.updatedAt)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </ErpDataTable>
+          <div className="tutor-profile-list" style={{ padding: '0.75rem' }}>
+            {list.items.map((v) => {
+              const refs = v.references || [];
+              return (
+                <article key={v._id} className="tutor-profile-row booking-card">
+                  <div className="booking-card-main">
+                    <h3>{v.tutorUserId?.name || v.tutorUserId?.phone || 'Tutor'}</h3>
+                    <p className="muted">
+                      {v.tutorUserId?.phone || '—'} · {allDocs(v).length} docs ·{' '}
+                      {refs.filter((r) => r.otpVerified).length}/{refs.length} refs
+                    </p>
+                    {v.notes ? <p className="muted">{v.notes}</p> : null}
+                    <div className="booking-card-status">
+                      <ErpStatusBadge status={v.status}>{v.status}</ErpStatusBadge>
+                      <span className="muted">{formatDate(v.submittedAt || v.updatedAt)}</span>
+                    </div>
+                  </div>
+                  <div className="booking-card-actions">
+                    <ErpButton variant="secondary" onClick={() => openEdit(v._id)}>
+                      Review
+                    </ErpButton>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
         {list.total > 0 && <ErpPager {...list.pagerProps} noun="verification" />}

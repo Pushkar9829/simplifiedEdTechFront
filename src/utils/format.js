@@ -23,10 +23,23 @@ export function formatInZone(value, timeZone) {
 export function money(amount, currency = 'USD') {
   const n = Number(amount || 0);
   try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(n);
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency || 'USD' }).format(n);
   } catch {
-    return `${currency} ${n}`;
+    return `${currency || 'USD'} ${n}`;
   }
+}
+
+export function countryLine(country, timezone, currency) {
+  return [country, timezone, currency].filter(Boolean).join(' · ') || '—';
+}
+
+export function formatPlace(location = {}, country) {
+  const loc = location || {};
+  return [loc.area, loc.city, loc.state, country].filter(Boolean).join(', ') || '—';
+}
+
+export function tutorRef(user) {
+  return user?.refCode || '—';
 }
 
 export function statusBadge(status) {

@@ -1,4 +1,4 @@
-import { Children, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Children, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
@@ -129,29 +129,36 @@ export function ErpSelect({
       position: 'fixed',
       left: Math.max(8, Math.min(r.left, window.innerWidth - Math.max(r.width, 180) - 8)),
       width: Math.max(r.width, 180),
-      top: openUp ? undefined : r.bottom + 4,
-      bottom: openUp ? window.innerHeight - r.top + 4 : undefined,
-      maxHeight: Math.min(320, openUp ? r.top - 12 : spaceBelow - 12),
+      top: openUp ? 'auto' : r.bottom + 4,
+      bottom: openUp ? window.innerHeight - r.top + 4 : 'auto',
+      maxHeight: Math.min(320, Math.max(120, openUp ? r.top - 12 : spaceBelow - 12)),
     });
   };
 
-  useEffect(() => {
-    if (!open) return undefined;
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuStyle({});
+      return undefined;
+    }
     placeMenu();
     setQuery('');
     const selectedIdx = filtered.findIndex((o) => String(o.value) === String(value ?? ''));
     setHighlight(selectedIdx >= 0 ? selectedIdx : 0);
-    const t = window.setTimeout(() => searchRef.current?.focus(), 0);
     const onWin = () => placeMenu();
     window.addEventListener('resize', onWin);
     window.addEventListener('scroll', onWin, true);
     return () => {
-      window.clearTimeout(t);
       window.removeEventListener('resize', onWin);
       window.removeEventListener('scroll', onWin, true);
     };
     // filtered/value only used to seed highlight when opening
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const t = window.setTimeout(() => searchRef.current?.focus({ preventScroll: true }), 0);
+    return () => window.clearTimeout(t);
   }, [open]);
 
   useEffect(() => {
@@ -180,7 +187,13 @@ export function ErpSelect({
 
   useEffect(() => {
     if (!open) return;
-    menuRef.current?.querySelector('.erp-select-option-highlight')?.scrollIntoView({ block: 'nearest' });
+    const list = menuRef.current?.querySelector('.erp-select-list');
+    const item = menuRef.current?.querySelector('.erp-select-option-highlight');
+    if (!list || !item) return;
+    const top = item.offsetTop;
+    const bottom = top + item.offsetHeight;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
   }, [highlight, open]);
 
   const pick = (opt) => {

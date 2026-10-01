@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getHomework, submitHomework } from '../../api';
-import { formatDate, statusBadge } from '../../utils/format';
+import { ErpButton, ErpPageHeader, ErpTabs } from '../../components/erp';
+import { formatDate, tutorRef } from '../../utils/format';
 import { gradeLabel, schemeLabel } from '../../utils/grading';
 import { mediaName, mediaUrl } from '../../utils/mediaUrl';
 import { titleCase } from './studentOptions';
@@ -15,6 +16,7 @@ export default function StudentHomeworkDetailPage() {
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState('brief');
 
   const load = async () => {
     setLoading(true);
@@ -51,27 +53,36 @@ export default function StudentHomeworkDetailPage() {
 
   return (
     <div className="page stack">
-      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ margin: 0 }}>{a.title}</h1>
-        <Link to="/student/homework" className="btn secondary">
-          Back to homework
-        </Link>
-      </div>
+      <ErpPageHeader
+        subtitle={`${a.subjectId?.name || 'Homework'} · due ${formatDate(a.deadline)} · ${titleCase(a.status)}`}
+        actions={
+          <Link to="/student/homework" className="btn secondary">
+            Back to homework
+          </Link>
+        }
+      />
+      <h1 style={{ margin: 0 }}>{a.title}</h1>
 
       {msg && <div className="success-banner">{msg}</div>}
       {error && <div className="error-banner">{error}</div>}
 
-      <div className="grid two">
+      <div className="avail-bar">
+        <ErpTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'brief', label: 'Brief' },
+            { value: 'submit', label: 'Submit' },
+          ]}
+        />
+      </div>
+
+      {tab === 'brief' && (
         <section className="erp-card stack">
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <span className={statusBadge(a.status)}>{titleCase(a.status)}</span>
-            <span className="muted">Due {formatDate(a.deadline)}</span>
-          </div>
           <p>{a.description || 'No description.'}</p>
           <p className="muted">Rubric: {a.rubric || '—'}</p>
           <p className="muted">
-            Subject: {a.subjectId?.name || '—'} · Tutor: {a.tutorUserId?.name || '—'} ·{' '}
-            {schemeLabel(a.gradingScheme)}
+            Tutor: {tutorRef(a.tutorUserId)} · {schemeLabel(a.gradingScheme)}
           </p>
           {!!a.attachments?.length && (
             <div>
@@ -111,9 +122,11 @@ export default function StudentHomeworkDetailPage() {
             </div>
           )}
         </section>
+      )}
 
+      {tab === 'submit' && (
         <section className="erp-card stack">
-          <h2>Submit work</h2>
+          <h2 style={{ margin: 0 }}>Submit work</h2>
           <div className="field">
             <label>Notes</label>
             <textarea
@@ -126,8 +139,7 @@ export default function StudentHomeworkDetailPage() {
             <label>Files</label>
             <input type="file" multiple onChange={(e) => setFiles(e.target.files)} />
           </div>
-          <button
-            className="btn"
+          <ErpButton
             type="button"
             disabled={saving}
             onClick={async () => {
@@ -150,9 +162,9 @@ export default function StudentHomeworkDetailPage() {
             }}
           >
             {saving ? 'Submitting…' : 'Submit assignment'}
-          </button>
+          </ErpButton>
         </section>
-      </div>
+      )}
     </div>
   );
 }

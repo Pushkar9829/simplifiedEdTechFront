@@ -64,7 +64,7 @@ export default function TutorProjects() {
 
   return (
     <div className="page stack">
-      <ErpPageHeader subtitle="Named work with a price, status, and delivery date." />
+      <ErpPageHeader subtitle="Charge the student a fee for project work. Students pay you — they are not paid by anyone." />
       {error && <div className="error-banner">{error}</div>}
       <div className="avail-bar">
         <ErpTabs
@@ -147,7 +147,7 @@ export default function TutorProjects() {
                 <tr>
                   <th>Name</th>
                   <th>Student</th>
-                  <th>Price</th>
+                  <th>Fee you charge</th>
                   <th>Delivery</th>
                   <th>Status</th>
                   <th />

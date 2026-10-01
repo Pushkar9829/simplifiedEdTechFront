@@ -20,7 +20,8 @@ import {
   ErpTabs,
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
-import { LEVEL_OPTIONS, resourceTypeOptions, subjectOptions } from './adminOptions';
+import { useCatalog } from '../../context/CatalogContext';
+import { subjectOptions } from './adminOptions';
 import { useAdminModalQuery } from './useAdminModalQuery';
 
 const emptyForm = {
@@ -34,6 +35,7 @@ const emptyForm = {
 };
 
 function ResourceForm({ id, onSaved, onCancel }) {
+  const { options } = useCatalog();
   const isEdit = Boolean(id);
   const [form, setForm] = useState(emptyForm);
   const [subjects, setSubjects] = useState([]);
@@ -141,13 +143,13 @@ function ResourceForm({ id, onSaved, onCancel }) {
       <ErpSelect
         label="Type"
         value={form.type}
-        options={resourceTypeOptions()}
+        options={options('resource_type')}
         onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
       />
       <ErpSelect
         label="Level"
         value={form.level}
-        options={LEVEL_OPTIONS}
+        options={options('subject_level')}
         onChange={(e) => setForm((f) => ({ ...f, level: e.target.value }))}
       />
       <div className="field">
@@ -195,6 +197,7 @@ function ResourceForm({ id, onSaved, onCancel }) {
 export default function AdminResourcesPage() {
   const { isNew, editId, modalOpen, openNew, openEdit, close } = useAdminModalQuery();
   const [items, setItems] = useState([]);
+  const { options } = useCatalog();
   const [filterType, setFilterType] = useState('');
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState('all');
@@ -251,7 +254,7 @@ export default function AdminResourcesPage() {
         <ErpSelect
           inline
           value={filterType}
-          options={resourceTypeOptions(true)}
+          options={options('resource_type', { all: 'All types' })}
           onChange={(e) => setFilterType(e.target.value)}
         />
         <div className="avail-bar-actions">

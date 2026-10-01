@@ -9,7 +9,8 @@ import {
   updateCourse,
 } from '../../api';
 import { ErpSelect } from '../../components/erp';
-import { LEVEL_OPTIONS, subjectOptions } from './tutorOptions';
+import { useCatalog } from '../../context/CatalogContext';
+import { subjectOptions } from './tutorOptions';
 
 const empty = {
   title: '',
@@ -24,6 +25,7 @@ const empty = {
 
 export default function TutorCourseFormPage() {
   const { id } = useParams();
+  const { options } = useCatalog();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [form, setForm] = useState(empty);
@@ -132,7 +134,7 @@ export default function TutorCourseFormPage() {
         <ErpSelect
           label="Level"
           value={form.level}
-          options={LEVEL_OPTIONS}
+          options={options('subject_level')}
           onChange={(e) => setForm((f) => ({ ...f, level: e.target.value }))}
         />
         <ErpSelect

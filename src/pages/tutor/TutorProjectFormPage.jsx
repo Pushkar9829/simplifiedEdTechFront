@@ -114,7 +114,7 @@ export default function TutorProjectFormPage() {
           value={form.kind}
           options={[
             { value: 'project', label: 'Project' },
-            { value: 'assignment', label: 'Paid assignment' },
+            { value: 'assignment', label: 'Assignment' },
           ]}
           onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value }))}
         />
@@ -138,14 +138,17 @@ export default function TutorProjectFormPage() {
           />
         </div>
         <div className="field">
-          <label>Price</label>
+          <label>Fee charged to student</label>
           <input
             className="erp-search"
             type="number"
-            min="0"
+            min="1"
+            step="0.01"
+            required
             value={form.price}
             onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
           />
+          <div className="muted">The student or parent pays this. Students do not receive payment.</div>
         </div>
         <ErpSelect
           label="Currency"

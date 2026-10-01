@@ -6,6 +6,7 @@ const links = [
   { to: '/student/subjects', label: 'Subjects' },
   { to: '/student/tutors', label: 'Find tutors' },
   { to: '/student/bookings', label: 'Bookings' },
+  { to: '/student/policy', label: 'Class policy' },
   { to: '/student/resources', label: 'Resources' },
   { to: '/student/homework', label: 'Homework' },
   { to: '/student/projects', label: 'Projects' },

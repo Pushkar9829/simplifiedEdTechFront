@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
+  approveReplacementTutor,
   cancelBooking,
   completeBooking,
+  declineReschedule,
   getBookingChain,
   getBookingSummary,
   getStudentInsights,
   joinBooking,
   listBookings,
-  rescheduleBooking,
+  listScheduleChanges,
+  offerRescheduleSlots,
+  requestReschedule,
   saveSessionReport,
   setAttendance,
   setMeetingStatus,
 } from '../../api';
+import { useAuth } from '../../context/AuthContext';
 import {
   ErpButton,
   ErpCalendar,
@@ -33,10 +38,11 @@ import {
   useIsPhone,
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
-import { formatDate, formatInZone, money } from '../../utils/format';
+import { formatDate, formatInZone, money, tutorRef } from '../../utils/format';
 import { mediaUrl } from '../../utils/mediaUrl';
 import { gradeLabel, GRADING_SCHEME_OPTIONS } from '../../utils/grading';
 import { ATTENDANCE_OPTIONS } from './tutorOptions';
+import ClassToolsModal from '../../components/ClassToolsModal';
 
 const MOOD_OPTIONS = [
   { value: '', label: 'Not noted' },
@@ -139,18 +145,13 @@ function canChangeBooking(b) {
   return Boolean(b && b.status !== 'cancelled' && b.status !== 'completed');
 }
 
-function toLocalInput(iso) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function rescheduleDraft(booking) {
+function rescheduleDraft(booking, extra = {}) {
   return {
     booking,
-    startAt: toLocalInput(booking.startAt),
-    endAt: toLocalInput(booking.endAt),
+    slots: extra.slots || [],
+    change: extra.change,
+    entitlement: extra.entitlement,
+    slotId: extra.slots?.[0]?._id || '',
   };
 }
 
@@ -247,6 +248,7 @@ function AssignmentFields({ form, setForm }) {
 }
 
 export default function TutorBookings() {
+  const { user } = useAuth();
   const phone = useIsPhone();
   const [params] = useSearchParams();
   const openedFromQuery = useRef(false);
@@ -256,6 +258,8 @@ export default function TutorBookings() {
   const [modeFilter, setModeFilter] = useState('all');
   const [pendingCancel, setPendingCancel] = useState(null);
   const [reschedule, setReschedule] = useState(null);
+  const [changes, setChanges] = useState([]);
+  const [offerDraft, setOfferDraft] = useState(null);
   const [range, setRange] = useState(null);
   const [error, setError] = useState('');
   const [msg, setMsg] = useState('');
@@ -267,6 +271,7 @@ export default function TutorBookings() {
   const [assignForm, setAssignForm] = useState(emptyAssignment());
   const [assign, setAssign] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [joinTools, setJoinTools] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -276,8 +281,9 @@ export default function TutorBookings() {
         view === 'calendar' && range
           ? { from: range.from.toISOString(), to: range.to.toISOString(), limit: 500 }
           : { limit: 200 };
-      const d = await listBookings(params);
+      const [d, c] = await Promise.all([listBookings(params), listScheduleChanges()]);
       setItems(d.items || []);
+      setChanges(Array.isArray(c) ? c : c.items || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -325,6 +331,24 @@ export default function TutorBookings() {
     await load();
     if (selected) loadDetail(selected);
   };
+
+  const openReschedule = async (booking) => {
+    try {
+      const data = await requestReschedule(booking._id);
+      setReschedule(rescheduleDraft(booking, data));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const incomingReplacements = changes.filter((c) => {
+    const rid = String(c.replacementTutorUserId?._id || c.replacementTutorUserId || '');
+    return c.status === 'awaiting_approval' && rid === String(user?.id || '');
+  });
+  const incomingPending = changes.filter((c) => {
+    const tid = String(c.tutorUserId?._id || c.tutorUserId || '');
+    return c.status === 'pending' && tid === String(user?.id || '');
+  });
 
   const modeItems = useMemo(
     () => (modeFilter === 'all' ? items : items.filter((b) => (b.deliveryMode || 'online') === modeFilter)),
@@ -375,7 +399,7 @@ export default function TutorBookings() {
   const bookingActions = (b) =>
     canChangeBooking(b)
       ? [
-          { label: 'Reschedule', onClick: () => setReschedule(rescheduleDraft(b)) },
+          { label: 'Reschedule', onClick: () => openReschedule(b) },
           { label: 'Cancel', danger: true, onClick: () => setPendingCancel(b) },
         ]
       : [];
@@ -388,10 +412,10 @@ export default function TutorBookings() {
         window.alert(
           `Offline class: ${[loc.label, loc.address, loc.area, loc.city].filter(Boolean).join(', ') || 'See profile location'}`
         );
-      } else if (j.meetingUrl) {
-        window.open(j.meetingUrl, '_blank', 'noopener');
-        refreshSelected();
+        return;
       }
+      setJoinTools(j);
+      refreshSelected();
     } catch (err) {
       setError(err.message);
     }
@@ -456,9 +480,86 @@ export default function TutorBookings() {
 
   return (
     <div className="page stack">
-      <ErpPageHeader subtitle="Join Zoom classes, record what happened, and assign homework after each session." />
+      <ErpPageHeader subtitle="Open Zoom, Google Docs, and the whiteboard, then record what happened after each session." />
       {error && <div className="error-banner">{error}</div>}
       {msg && <div className="success-banner">{msg}</div>}
+      {incomingPending.length > 0 && (
+        <div className="erp-card stack">
+          <h3 style={{ margin: 0 }}>Student reschedule requests</h3>
+          <p className="muted" style={{ margin: 0 }}>
+            Confirm the slots you can teach. The class is not moved until the student picks one in the app.
+          </p>
+          {incomingPending.map((c) => (
+            <div key={c._id} className="row" style={{ justifyContent: 'space-between' }}>
+              <span>
+                {c.studentUserId?.name || 'Student'} · {c.bookingId?.subjectId?.name || 'Class'} ·{' '}
+                {formatInZone(c.bookingId?.startAt)}
+              </span>
+              <ErpButton
+                onClick={async () => {
+                  try {
+                    const data = await requestReschedule(c.bookingId?._id || c.bookingId);
+                    setOfferDraft({
+                      bookingId: c.bookingId?._id || c.bookingId,
+                      slots: data.suggestedSlots || data.slots || [],
+                      selected: (data.suggestedSlots || data.slots || []).map((s) => s._id),
+                    });
+                  } catch (err) {
+                    setError(err.message);
+                  }
+                }}
+              >
+                Offer slots
+              </ErpButton>
+            </div>
+          ))}
+        </div>
+      )}
+      {incomingReplacements.length > 0 && (
+        <div className="erp-card stack">
+          <h3 style={{ margin: 0 }}>Replacement class requests</h3>
+          <p className="muted" style={{ margin: 0 }}>
+            A student asked to move a paid class to you. No extra payment. Approve in the app to confirm.
+          </p>
+          {incomingReplacements.map((c) => (
+            <div key={c._id} className="row" style={{ justifyContent: 'space-between' }}>
+              <span>
+                {c.studentUserId?.name || 'Student'} · {c.bookingId?.subjectId?.name || 'Class'} ·{' '}
+                {formatInZone(c.bookingId?.startAt)}
+              </span>
+              <div className="row">
+                <ErpButton
+                  variant="secondary"
+                  onClick={async () => {
+                    try {
+                      await declineReschedule(c.bookingId?._id || c.bookingId);
+                      setMsg('Request declined. Original class stays with the assigned tutor.');
+                      load();
+                    } catch (err) {
+                      setError(err.message);
+                    }
+                  }}
+                >
+                  Decline
+                </ErpButton>
+                <ErpButton
+                  onClick={async () => {
+                    try {
+                      await approveReplacementTutor(c.bookingId?._id || c.bookingId);
+                      setMsg('You are now the assigned tutor. No extra payment.');
+                      load();
+                    } catch (err) {
+                      setError(err.message);
+                    }
+                  }}
+                >
+                  Approve
+                </ErpButton>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="avail-bar">
         <ErpTabs
@@ -588,7 +689,7 @@ export default function TutorBookings() {
                         <td className="row" onClick={(e) => e.stopPropagation()}>
                           {canChangeBooking(b) && (
                             <>
-                              <ErpButton variant="secondary" onClick={() => setReschedule(rescheduleDraft(b))}>
+                              <ErpButton variant="secondary" onClick={() => openReschedule(b)}>
                                 Reschedule
                               </ErpButton>
                               <ErpButton variant="danger" onClick={() => setPendingCancel(b)}>
@@ -620,11 +721,11 @@ export default function TutorBookings() {
             <>
               {canChangeBooking(selected) && (
                 <ErpButton variant="secondary" onClick={() => join(selected)}>
-                  {selected.deliveryMode === 'offline' ? 'Location' : 'Start Zoom'}
+                  {selected.deliveryMode === 'offline' ? 'Location' : 'Class tools'}
                 </ErpButton>
               )}
               {canChangeBooking(selected) && (
-                <ErpButton variant="secondary" onClick={() => setReschedule(rescheduleDraft(selected))}>
+                <ErpButton variant="secondary" onClick={() => openReschedule(selected)}>
                   Reschedule
                 </ErpButton>
               )}
@@ -936,7 +1037,7 @@ export default function TutorBookings() {
             ? `Cancel ${studentName(pendingCancel)} · ${pendingCancel.subjectId?.name || 'lesson'} on ${formatInZone(
                 pendingCancel.startAt,
                 pendingCancel.timezone
-              )}?`
+              )}? The student keeps this session and this does not use their monthly reschedule.`
             : ''
         }
         confirmLabel="Cancel class"
@@ -963,64 +1064,137 @@ export default function TutorBookings() {
         footer={
           reschedule ? (
             <>
-              <ErpButton variant="secondary" onClick={() => setReschedule(null)}>
-                Close
-              </ErpButton>
               <ErpButton
+                variant="secondary"
                 onClick={async () => {
                   try {
-                    const start = new Date(reschedule.startAt);
-                    const end = new Date(reschedule.endAt);
-                    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-                      throw new Error('Pick a valid start and end time');
-                    }
-                    if (end <= start) throw new Error('End must be after start');
-                    await rescheduleBooking(reschedule.booking._id, {
-                      startAt: start.toISOString(),
-                      endAt: end.toISOString(),
-                      timezone: reschedule.booking.timezone,
-                    });
+                    await declineReschedule(reschedule.booking._id);
                     setReschedule(null);
-                    setMsg('Booking rescheduled');
-                    refreshSelected();
+                    setMsg('Original class time stays in place.');
+                    load();
                   } catch (err) {
                     setError(err.message);
                   }
                 }}
               >
-                Save new time
+                Keep original time
+              </ErpButton>
+              <ErpButton
+                onClick={() => {
+                  setReschedule(null);
+                  setMsg(
+                    reschedule.slots?.length
+                      ? 'Alternative slots were sent. The student must confirm one in the Scholaris app.'
+                      : 'No free slot. The student can request a replacement tutor.'
+                  );
+                  load();
+                }}
+              >
+                Done
               </ErpButton>
             </>
           ) : null
         }
       >
         {reschedule && (
-          <div className="erp-form-grid">
-            <div className="field">
-              <label>Start</label>
-              <input
-                className="erp-search"
-                type="datetime-local"
-                value={reschedule.startAt}
-                onChange={(e) => setReschedule((f) => ({ ...f, startAt: e.target.value }))}
-              />
-            </div>
-            <div className="field">
-              <label>End</label>
-              <input
-                className="erp-search"
-                type="datetime-local"
-                value={reschedule.endAt}
-                onChange={(e) => setReschedule((f) => ({ ...f, endAt: e.target.value }))}
-              />
-            </div>
-            <p className="muted erp-form-span">
+          <div className="stack">
+            <p className="muted" style={{ margin: 0 }}>
               {studentName(reschedule.booking)} · {reschedule.booking.subjectId?.name || 'Lesson'} ·{' '}
-              {reschedule.booking.timezone}
+              {formatInZone(reschedule.booking.startAt, reschedule.booking.timezone)}
             </p>
+            <p className="muted" style={{ margin: 0 }}>
+              Tutor-initiated changes do not use the student’s monthly reschedule.
+            </p>
+            {reschedule.slots?.length ? (
+              <ErpSelect
+                label="Your available slots"
+                value={reschedule.slotId}
+                options={(reschedule.slots || []).map((s) => ({
+                  value: s._id,
+                  label: `${formatInZone(s.startAt, s.timezone || reschedule.booking.timezone)} → ${formatInZone(
+                    s.endAt,
+                    s.timezone || reschedule.booking.timezone
+                  )}`,
+                }))}
+                onChange={(e) => setReschedule((f) => ({ ...f, slotId: e.target.value }))}
+              />
+            ) : (
+              <p>
+                No free slot right now. The student can pick a replacement tutor in the app at no extra
+                charge, or you can add availability and try again.
+              </p>
+            )}
           </div>
         )}
       </ErpModal>
+
+      <ErpModal
+        open={Boolean(offerDraft)}
+        title="Offer available slots"
+        onClose={() => setOfferDraft(null)}
+        footer={
+          offerDraft ? (
+            <>
+              <ErpButton
+                variant="secondary"
+                onClick={async () => {
+                  try {
+                    await offerRescheduleSlots(offerDraft.bookingId, []);
+                    setOfferDraft(null);
+                    setMsg('No slot offered. The student may keep the original time or request a replacement.');
+                    load();
+                  } catch (err) {
+                    setError(err.message);
+                  }
+                }}
+              >
+                No slot available
+              </ErpButton>
+              <ErpButton
+                onClick={async () => {
+                  try {
+                    if (!offerDraft.selected.length) throw new Error('Select at least one slot, or choose no slot');
+                    await offerRescheduleSlots(offerDraft.bookingId, offerDraft.selected);
+                    setOfferDraft(null);
+                    setMsg('Slots sent. The student must confirm one in the app.');
+                    load();
+                  } catch (err) {
+                    setError(err.message);
+                  }
+                }}
+              >
+                Send slots to student
+              </ErpButton>
+            </>
+          ) : null
+        }
+      >
+        {offerDraft && (
+          <div className="stack">
+            {!offerDraft.slots.length && <p>You have no free slots. The student can request a replacement tutor.</p>}
+            {offerDraft.slots.map((s) => (
+              <label key={s._id} className="row" style={{ alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={offerDraft.selected.includes(s._id)}
+                  onChange={(e) =>
+                    setOfferDraft((d) => ({
+                      ...d,
+                      selected: e.target.checked
+                        ? [...d.selected, s._id]
+                        : d.selected.filter((id) => id !== s._id),
+                    }))
+                  }
+                />
+                {formatInZone(s.startAt, s.timezone)} → {formatInZone(s.endAt, s.timezone)}
+                {s.deliveryMode ? ` · ${s.deliveryMode}` : ''}
+              </label>
+            ))}
+          </div>
+        )}
+      </ErpModal>
+
+      <ClassToolsModal open={Boolean(joinTools)} join={joinTools} onClose={() => setJoinTools(null)} />
     </div>
   );
 }

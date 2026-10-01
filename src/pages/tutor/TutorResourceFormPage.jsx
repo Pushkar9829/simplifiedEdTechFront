@@ -7,12 +7,9 @@ import {
   updateResource,
   listSubjects,
 } from '../../api';
+import { useCatalog } from '../../context/CatalogContext';
 import { ErpSelect } from '../../components/erp';
-import {
-  LEVEL_OPTIONS,
-  resourceTypeOptions,
-  subjectOptions,
-} from './tutorOptions';
+import { subjectOptions } from './tutorOptions';
 
 const emptyForm = {
   title: '',
@@ -35,6 +32,7 @@ function asList(x) {
 export default function TutorResourceFormPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { options } = useCatalog();
   const [subjects, setSubjects] = useState([]);
   const [currencies, setCurrencies] = useState([]);
   const [form, setForm] = useState(emptyForm);
@@ -140,13 +138,13 @@ export default function TutorResourceFormPage() {
           <ErpSelect
             label="Type"
             value={form.type}
-            options={resourceTypeOptions()}
+            options={options('resource_type')}
             onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
           />
           <ErpSelect
             label="Level"
             value={form.level}
-            options={LEVEL_OPTIONS}
+            options={options('subject_level')}
             onChange={(e) => setForm((f) => ({ ...f, level: e.target.value }))}
           />
           <div className="field">
