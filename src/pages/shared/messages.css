@@ -1,0 +1,566 @@
+/* Messages page — two-pane chat. Tokens only. */
+
+.sp-chat-page {
+  gap: 1rem;
+}
+
+.sp-chat {
+  display: grid;
+  grid-template-columns: minmax(16rem, 21rem) minmax(0, 1fr);
+  height: calc(100dvh - var(--erp-topbar-h, 56px) - 4rem);
+  min-height: 30rem;
+  overflow: hidden;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius-lg);
+  background: var(--erp-surface);
+  box-shadow: var(--erp-shadow-card);
+}
+
+.sp-chat-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--erp-border);
+}
+
+.sp-chat-list-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--erp-divider);
+}
+
+.sp-chat-list-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.sp-chat-list-title h2 {
+  margin: 0;
+  font-size: var(--erp-font-md);
+  font-weight: 600;
+  color: var(--erp-text-primary);
+}
+
+.sp-count {
+  padding: 0 0.5rem;
+  border-radius: var(--erp-radius-full);
+  background: var(--erp-brand-50);
+  color: var(--erp-brand-700);
+  font-size: var(--erp-font-xs);
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.sp-chat-switch {
+  display: flex;
+  width: 100%;
+}
+
+.sp-chat-switch .erp-segmented-item {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.sp-chat-switch.is-sub .erp-segmented-item {
+  font-size: var(--erp-font-xs);
+}
+
+.sp-chat-list-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.375rem;
+}
+
+.sp-chat-list-body .erp-empty-state {
+  padding: 2rem 0.75rem;
+}
+
+.sp-convo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sp-convo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 56px;
+  padding: 0.5rem 0.625rem;
+  border: 0;
+  border-radius: var(--erp-radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--erp-motion);
+}
+
+.sp-convo:hover:not(:disabled) {
+  background: var(--erp-surface-hover);
+}
+
+.sp-convo:focus-visible {
+  outline: none;
+  box-shadow: var(--erp-focus-ring);
+}
+
+.sp-convo.is-active,
+.sp-convo.is-active:hover:not(:disabled) {
+  background: var(--erp-brand-50);
+}
+
+.sp-convo:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.sp-convo-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.sp-convo-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.sp-convo-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--erp-font-base);
+  font-weight: 500;
+  color: var(--erp-text-primary);
+}
+
+.sp-convo.is-unread .sp-convo-name {
+  font-weight: 600;
+}
+
+.sp-convo-time {
+  flex: 0 0 auto;
+  font-size: var(--erp-font-xs);
+  color: var(--erp-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-convo.is-unread .sp-convo-time {
+  color: var(--erp-brand-700);
+  font-weight: 500;
+}
+
+.sp-convo-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--erp-font-sm);
+  color: var(--erp-text-muted);
+}
+
+.sp-unread-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--erp-radius-full);
+  background: var(--erp-accent);
+}
+
+.sp-convo-go {
+  display: inline-flex;
+  color: var(--erp-text-faint);
+}
+
+.sp-convo:hover .sp-convo-go {
+  color: var(--erp-brand-700);
+}
+
+.sp-chat-center {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  min-height: 10rem;
+  padding: 1rem;
+}
+
+/* Thread */
+.sp-thread {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.sp-thread-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 60px;
+  padding: 0.625rem 1.25rem;
+  border-bottom: 1px solid var(--erp-divider);
+}
+
+.sp-thread-who {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.sp-thread-who strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--erp-text-primary);
+}
+
+.sp-thread-who span {
+  font-size: var(--erp-font-sm);
+  color: var(--erp-text-muted);
+}
+
+.sp-thread-privacy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--erp-radius-full);
+  background: var(--erp-surface-muted);
+  border: 1px solid var(--erp-border);
+  color: var(--erp-text-muted);
+  font-size: var(--erp-font-xs);
+  white-space: nowrap;
+}
+
+.sp-thread-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.5rem 1.25rem 1rem;
+  background: var(--erp-surface-muted);
+}
+
+.sp-day-sep {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem 0 0.5rem;
+}
+
+.sp-day-sep span {
+  padding: 0.125rem 0.625rem;
+  border-radius: var(--erp-radius-full);
+  background: var(--erp-surface);
+  border: 1px solid var(--erp-border);
+  color: var(--erp-text-muted);
+  font-size: var(--erp-font-xs);
+  font-weight: 500;
+}
+
+.sp-msg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  margin-top: 0.625rem;
+}
+
+.sp-msg.is-mine {
+  align-items: flex-end;
+}
+
+.sp-bubble {
+  max-width: min(36rem, 78%);
+  padding: 0.5rem 0.75rem;
+  border-radius: 14px 14px 14px 4px;
+  background: var(--erp-surface);
+  border: 1px solid var(--erp-border);
+  color: var(--erp-text-primary);
+  font-size: var(--erp-font-base);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.sp-msg.is-mine .sp-bubble {
+  border-radius: 14px 14px 4px 14px;
+  border-color: transparent;
+  background: var(--erp-btn-primary-bg);
+  color: var(--erp-on-accent);
+}
+
+.sp-bubble-text {
+  display: block;
+}
+
+.sp-bubble-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0 0.375rem 0.25rem 0;
+  padding: 0 0.375rem;
+  border-radius: var(--erp-radius-sm);
+  background: var(--erp-brand-50);
+  color: var(--erp-brand-700);
+  font-size: var(--erp-font-xs);
+  font-weight: 500;
+  line-height: 20px;
+  vertical-align: middle;
+}
+
+.sp-msg.is-mine .sp-bubble-kind {
+  background: color-mix(in srgb, var(--erp-on-accent) 18%, transparent);
+  color: inherit;
+}
+
+.sp-bubble-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  vertical-align: bottom;
+  color: var(--erp-accent);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: normal;
+}
+
+.sp-bubble-link:hover {
+  text-decoration: underline;
+}
+
+.sp-msg.is-mine .sp-bubble-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.sp-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+}
+
+.sp-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--erp-radius-md);
+  background: var(--erp-surface-hover);
+  color: var(--erp-text-primary);
+  font-size: var(--erp-font-sm);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sp-attachment span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sp-msg.is-mine .sp-attachment {
+  background: color-mix(in srgb, var(--erp-on-accent) 16%, transparent);
+  color: inherit;
+}
+
+.sp-msg-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.25rem;
+  color: var(--erp-text-faint);
+  font-size: var(--erp-font-xs);
+}
+
+.sp-msg-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--erp-warning-text);
+}
+
+/* Composer */
+.sp-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.75rem 1rem 0.625rem;
+  border-top: 1px solid var(--erp-divider);
+  background: var(--erp-surface);
+}
+
+.sp-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.25rem;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius-lg);
+  background: var(--erp-input-bg);
+  transition: border-color var(--erp-motion), box-shadow var(--erp-motion);
+}
+
+.sp-composer-row:focus-within {
+  border-color: var(--erp-accent);
+  box-shadow: var(--erp-focus-ring);
+}
+
+.sp-composer .sp-composer-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  max-height: 132px;
+  padding: 0.5rem 0.25rem;
+  border: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--erp-text-primary);
+  font: inherit;
+  font-size: var(--erp-font-base);
+  line-height: 1.4;
+  resize: none;
+}
+
+.sp-composer .sp-composer-input:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.sp-attach {
+  position: relative;
+  flex: 0 0 auto;
+  cursor: pointer;
+  color: var(--erp-text-muted);
+}
+
+.sp-attach input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.sp-attach:focus-within {
+  box-shadow: var(--erp-focus-ring);
+}
+
+.sp-send {
+  flex: 0 0 auto;
+}
+
+.sp-composer-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.sp-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 16rem;
+  padding: 0.125rem 0.25rem 0.125rem 0.5rem;
+  border-radius: var(--erp-radius-full);
+  background: var(--erp-neutral-bg);
+  color: var(--erp-text-secondary);
+  font-size: var(--erp-font-xs);
+}
+
+.sp-file-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-file-chip button {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--erp-radius-full);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sp-file-chip button:hover {
+  background: var(--erp-surface-hover);
+}
+
+.sp-composer-hint {
+  margin: 0;
+  padding: 0 0.25rem;
+  color: var(--erp-text-faint);
+  font-size: var(--erp-font-xs);
+}
+
+@media (max-width: 900px) {
+  .sp-chat {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: 0;
+  }
+
+  .sp-chat-list {
+    border-right: 0;
+  }
+
+  .sp-chat-list-body {
+    overflow: visible;
+  }
+
+  .sp-chat-page.is-thread .sp-chat {
+    height: calc(100dvh - var(--erp-topbar-h, 56px) - 2rem - 4.5rem - env(safe-area-inset-bottom));
+    min-height: 22rem;
+  }
+
+  .sp-thread-head {
+    padding: 0.5rem 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .sp-thread-scroll {
+    padding: 0.25rem 0.75rem 0.75rem;
+  }
+
+  .sp-bubble {
+    max-width: 86%;
+  }
+
+  .sp-composer {
+    padding: 0.5rem 0.625rem;
+  }
+
+  .sp-attach,
+  .sp-send {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}

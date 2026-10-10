@@ -68,6 +68,8 @@ import AdminConfigFormPage from './pages/admin/AdminConfigFormPage';
 import AdminTicketsPage from './pages/admin/AdminTicketsPage';
 import AdminSettingsPage from './pages/admin/AdminSettingsPage';
 import AdminBookingsPage from './pages/admin/AdminBookingsPage';
+import SupportPage from './pages/shared/SupportPage';
+import NotFoundPage from './pages/shared/NotFoundPage';
 
 function HomeRedirect() {
   const { user, loading, homePath } = useAuth();
@@ -101,7 +103,9 @@ export default function App() {
           <Route path="wallet" element={<WalletPage />} />
           <Route path="messages" element={<MessagesPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="support" element={<SupportPage />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
 
@@ -133,7 +137,9 @@ export default function App() {
           <Route path="verification" element={<TutorVerification />} />
           <Route path="messages" element={<MessagesPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="support" element={<SupportPage />} />
           <Route path="profile" element={<ProfilePage tutorFields />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
 
@@ -148,11 +154,14 @@ export default function App() {
           <Route path="bookings" element={<StudentBookings />} />
           <Route path="policy" element={<StudentClassPolicy />} />
           <Route path="projects" element={<StudentProjects />} />
+          <Route path="courses" element={<StudentCourses />} />
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="wallet" element={<WalletPage />} />
           <Route path="messages" element={<MessagesPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="support" element={<SupportPage />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
 
@@ -186,10 +195,11 @@ export default function App() {
           <Route path="configs/:key/edit" element={<AdminConfigFormPage />} />
           <Route path="tickets" element={<AdminTicketsPage />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }

@@ -27,19 +27,42 @@ import {
 } from '../../api';
 import { useCatalog } from '../../context/CatalogContext';
 import {
+  ErpBanner,
   ErpButton,
-  ErpCard,
   ErpConfirm,
+  ErpInput,
   ErpModal,
-  ErpOverflow,
   ErpPager,
   ErpPageHeader,
   ErpSearch,
   ErpSelect,
-  ErpStatusBadge,
   ErpTabs,
+  ErpTextarea,
+  Icon,
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
+import { errorMessage } from '../../utils/errors';
+import {
+  AdminCell,
+  AdminFormSection,
+  AdminListState,
+  AdminRowActions,
+  AdminStatus,
+  AdminSwitch,
+  AdminTableCard,
+  AdminToolbar,
+} from './AdminKit';
+import {
+  CONFIG_VALUE_TYPE_OPTIONS,
+  LEVEL_OPTIONS,
+  configValueText,
+  configValueType,
+  parseConfigValue,
+  titleCase,
+} from './adminOptions';
+
+// Subject levels are a fixed backend enum; they are not editable as a dropdown.
+const READ_ONLY_GROUPS = ['subject_level'];
 
 function asList(x) {
   return Array.isArray(x) ? x : x?.items || [];
@@ -64,7 +87,7 @@ const EMPTY_SUBJECT = {
   description: '',
   isActive: true,
 };
-const EMPTY_CONFIG = { key: '', value: '', description: '' };
+const EMPTY_CONFIG = { key: '', value: '', valueType: 'text', description: '' };
 
 export default function AdminSettingsPage() {
   const [params, setParams] = useSearchParams();
@@ -85,6 +108,9 @@ export default function AdminSettingsPage() {
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [modalError, setModalError] = useState('');
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const setTab = (value) => {
     const next = new URLSearchParams(params);
@@ -101,13 +127,16 @@ export default function AdminSettingsPage() {
         listCountries({ includeInactive: true }),
         listBoards({ includeInactive: true }),
         listClassLevels({ includeInactive: true }),
-        listSubjects({ includeInactive: 'true' }),
+        listSubjects({ includeInactive: 'true', limit: 500 }),
         listConfigs(),
       ]);
-      setLookups(asList(lookupData));
-      setLookupGroups(lookupData?.groups || []);
-      if (lookupData?.groups?.[0] && !lookupData.groups.some((g) => g.value === group)) {
-        setGroup(lookupData.groups[0].value);
+      const editableGroups = (lookupData?.groups || []).filter(
+        (g) => !READ_ONLY_GROUPS.includes(g.value)
+      );
+      setLookups(asList(lookupData).filter((row) => !READ_ONLY_GROUPS.includes(row.group)));
+      setLookupGroups(editableGroups);
+      if (editableGroups[0] && !editableGroups.some((g) => g.value === group)) {
+        setGroup(editableGroups[0].value);
       }
       setCountries(asList(c));
       setBoards(asList(b));
@@ -116,7 +145,7 @@ export default function AdminSettingsPage() {
       setConfigs(asList(cfg));
       catalog.reload();
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -131,7 +160,7 @@ export default function AdminSettingsPage() {
     ...countries.map((c) => ({ value: c._id, label: `${c.name} (${c.currency})` })),
   ];
   const categoryOptions = catalog.options('subject_category');
-  const levelOptions = catalog.options('subject_level');
+  const levelOptions = LEVEL_OPTIONS;
 
   const rows = useMemo(() => {
     if (tab === 'dropdowns') return lookups.filter((row) => row.group === group);
@@ -154,6 +183,7 @@ export default function AdminSettingsPage() {
   const openEditor = (row) => {
     setError('');
     setMsg('');
+    setModalError('');
     if (tab === 'dropdowns') {
       setForm(row ? { ...EMPTY_LOOKUP, ...row } : { ...EMPTY_LOOKUP });
     } else if (tab === 'countries') {
@@ -185,7 +215,8 @@ export default function AdminSettingsPage() {
         row
           ? {
               key: row.key,
-              value: typeof row.value === 'string' ? row.value : JSON.stringify(row.value),
+              value: configValueText(row.value),
+              valueType: configValueType(row.value),
               description: row.description || '',
             }
           : { ...EMPTY_CONFIG }
@@ -196,8 +227,22 @@ export default function AdminSettingsPage() {
 
   const save = async () => {
     if (!editing) return;
+    let configValue;
+    if (editing.kind === 'configs') {
+      const parsed = parseConfigValue(form.value, form.valueType);
+      if (parsed.error) {
+        setModalError(parsed.error);
+        return;
+      }
+      const key = String(form.key || '').trim();
+      if (!editing.key && configs.some((c) => c.key === key) && !form.overwrite) {
+        setModalError(`A config named "${key}" already exists. Tick "Overwrite" to replace it.`);
+        return;
+      }
+      configValue = parsed.value;
+    }
     setSaving(true);
-    setError('');
+    setModalError('');
     try {
       if (editing.kind === 'dropdowns') {
         const body = {
@@ -242,25 +287,23 @@ export default function AdminSettingsPage() {
           code: form.code,
           category: form.category,
           description: form.description,
-          levels: form.levels?.length ? form.levels : ['N/A'],
+          levels: form.levels?.length ? form.levels : ['HL', 'SL'],
           isActive: Boolean(form.isActive),
         };
         if (editing._id) await updateSubject(editing._id, body);
         else await createSubject(body);
       } else {
-        let value = form.value;
-        try {
-          value = JSON.parse(form.value);
-        } catch {
-          /* keep string */
-        }
-        await setConfig({ key: form.key, value, description: form.description });
+        await setConfig({
+          key: String(form.key || '').trim(),
+          value: configValue,
+          description: form.description,
+        });
       }
       setEditing(null);
       setMsg('Saved. Student, tutor, and parent dropdowns now use this list.');
       await load();
     } catch (err) {
-      setError(err.message);
+      setModalError(errorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -268,7 +311,8 @@ export default function AdminSettingsPage() {
 
   const removeRow = async () => {
     if (!pendingDelete) return;
-    setError('');
+    setDeleteBusy(true);
+    setDeleteError('');
     try {
       const { kind, row } = pendingDelete;
       if (kind === 'dropdowns') await deleteLookup(row._id);
@@ -278,11 +322,12 @@ export default function AdminSettingsPage() {
       else if (kind === 'subjects') await deleteSubject(row._id);
       else await deleteConfig(row.key);
       setPendingDelete(null);
-      setMsg('Removed');
+      setMsg('Removed.');
       await load();
     } catch (err) {
-      setError(err.message);
-      setPendingDelete(null);
+      setDeleteError(errorMessage(err));
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -312,235 +357,348 @@ export default function AdminSettingsPage() {
               ? 'subject'
               : 'config';
 
+  const plural = {
+    dropdowns: 'options',
+    countries: 'countries',
+    boards: 'boards',
+    levels: 'class levels',
+    subjects: 'subjects',
+    configs: 'configs',
+  }[tab];
+
+  const groupOptions = lookupGroups.length
+    ? lookupGroups.map((g) => ({ value: g.value, label: g.label }))
+    : catalog.groups
+        .filter((g) => !READ_ONLY_GROUPS.includes(g.value))
+        .map((g) => ({ value: g.value, label: g.label }));
+  const groupLabel = groupOptions.find((g) => g.value === group)?.label || titleCase(group);
+
+  const rowTitle = (row) => row.name || row.label || row.key;
+  const rowSub = (row) => {
+    if (tab === 'dropdowns') return `Value: ${row.value}`;
+    if (tab === 'countries') return row.code || null;
+    if (tab === 'configs') return row.description || null;
+    if (tab === 'subjects') return row.code || null;
+    if (tab === 'boards') return row.code || null;
+    return null;
+  };
+  const detailHead = {
+    dropdowns: 'Sort order',
+    countries: 'Currency · timezone',
+    boards: 'Country',
+    levels: 'Country',
+    subjects: 'Category · levels',
+    configs: 'Value',
+  }[tab];
+  const rowDetail = (row) => {
+    if (tab === 'dropdowns') return row.sortOrder ?? 0;
+    if (tab === 'countries')
+      return `${row.currency || ''} ${row.currencySymbol || ''} · ${row.defaultTimezone || '—'}`;
+    if (tab === 'boards' || tab === 'levels') return row.countryId?.name || 'All countries';
+    if (tab === 'subjects')
+      return (
+        <span className="adm-cell-tags">
+          {row.category ? <span className="erp-tag">{titleCase(row.category)}</span> : null}
+          {(row.levels || []).map((l) => (
+            <span key={l} className="erp-chip">
+              {l}
+            </span>
+          ))}
+        </span>
+      );
+    const text = typeof row.value === 'string' ? row.value : JSON.stringify(row.value);
+    return (
+      <code className="adm-code" title={text}>
+        {text}
+      </code>
+    );
+  };
+
   return (
     <div className="page stack">
-      <ErpPageHeader subtitle="Add or remove every dropdown and master list used by students, tutors, and parents." />
-      {error && <div className="error-banner">{error}</div>}
-      {msg && <div className="success-banner">{msg}</div>}
+      <ErpPageHeader
+        subtitle="Every dropdown and master list used by students, tutors and parents, in one place."
+        actions={
+          <ErpButton icon="plus" onClick={() => openEditor(null)}>
+            Add {noun}
+          </ErpButton>
+        }
+      />
+      {error && <ErpBanner variant="danger">{error}</ErpBanner>}
+      {msg && (
+        <ErpBanner variant="success" onDismiss={() => setMsg('')}>
+          {msg}
+        </ErpBanner>
+      )}
 
-      <div className="avail-bar">
-        <ErpTabs
-          value={tab}
-          onChange={setTab}
-          tabs={[
-            { value: 'dropdowns', label: `Dropdowns (${lookups.length})` },
-            { value: 'countries', label: `Countries (${countries.length})` },
-            { value: 'boards', label: `Boards (${boards.length})` },
-            { value: 'levels', label: `Class levels (${levels.length})` },
-            { value: 'subjects', label: `Subjects (${subjects.length})` },
-            { value: 'configs', label: `Configs (${configs.length})` },
-          ]}
-        />
-        {tab === 'dropdowns' && (
-          <ErpSelect
-            inline
-            value={group}
-            options={
-              lookupGroups.length
-                ? lookupGroups.map((g) => ({ value: g.value, label: g.label }))
-                : catalog.groups.map((g) => ({ value: g.value, label: g.label }))
-            }
-            onChange={(e) => setGroup(e.target.value)}
+      <AdminTableCard
+        tabs={
+          <ErpTabs
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { value: 'dropdowns', label: 'Dropdowns', count: lookups.length },
+              { value: 'countries', label: 'Countries', count: countries.length },
+              { value: 'boards', label: 'Boards', count: boards.length },
+              { value: 'levels', label: 'Class levels', count: levels.length },
+              { value: 'subjects', label: 'Subjects', count: subjects.length },
+              { value: 'configs', label: 'Configs', count: configs.length },
+            ]}
           />
-        )}
-        <ErpSearch value={list.search} onChange={list.setSearch} placeholder={`Search ${noun}s`} />
-        <div className="avail-bar-actions">
-          <ErpButton onClick={() => openEditor(null)}>Add {noun}</ErpButton>
-        </div>
-      </div>
-
-      <ErpCard className="erp-card-flush">
-        {loading ? (
-          <div className="empty">Loading settings…</div>
-        ) : !rows.length ? (
-          <div className="empty">Nothing in this list yet.</div>
-        ) : list.noMatch ? (
-          <div className="empty">No rows match that search.</div>
+        }
+        toolbar={
+          <AdminToolbar
+            right={
+              !loading ? (
+                <span className="adm-result-count">
+                  {list.total} {list.total === 1 ? noun : plural}
+                </span>
+              ) : null
+            }
+          >
+            {tab === 'dropdowns' && (
+              <ErpSelect
+                inline
+                value={group}
+                aria-label="Dropdown list"
+                leading={<Icon name="list-checks" size={15} />}
+                options={groupOptions}
+                onChange={(e) => setGroup(e.target.value)}
+              />
+            )}
+            <ErpSearch value={list.search} onChange={list.setSearch} placeholder={`Search ${plural}`} />
+          </AdminToolbar>
+        }
+        footer={list.pages > 1 ? <ErpPager {...list.pagerProps} noun={noun} /> : null}
+      >
+        {loading || !rows.length || list.noMatch ? (
+          <AdminListState
+            loading={loading}
+            empty={!rows.length}
+            noMatch={list.noMatch}
+            emptyProps={{
+              icon: 'list-checks',
+              title: tab === 'dropdowns' ? `No options in ${groupLabel}` : `No ${plural} yet`,
+              description: 'Add the first one to make it available across the app.',
+              action: (
+                <ErpButton icon="plus" onClick={() => openEditor(null)}>
+                  Add {noun}
+                </ErpButton>
+              ),
+            }}
+          />
         ) : (
-          <div className="tutor-profile-list" style={{ padding: '0.75rem' }}>
-            {list.items.map((row) => (
-              <article key={row._id || row.key} className="tutor-profile-row booking-card">
-                <div className="booking-card-main">
-                  <h3>
-                    {row.name || row.label || row.key}
-                    {row.code ? <span className="erp-chip">{row.code}</span> : null}
-                    {row.category ? <span className="erp-chip">{row.category}</span> : null}
-                  </h3>
-                  <p className="muted">
-                    {tab === 'dropdowns' && `Value: ${row.value} · Sort ${row.sortOrder ?? 0}`}
-                    {tab === 'countries' &&
-                      `${row.currency} ${row.currencySymbol || ''} · ${row.defaultTimezone}`}
-                    {(tab === 'boards' || tab === 'levels') && (row.countryId?.name || 'All countries')}
-                    {tab === 'subjects' && (row.levels || []).join(', ')}
-                    {tab === 'configs' &&
-                      (typeof row.value === 'string' ? row.value : JSON.stringify(row.value))}
-                  </p>
-                  {row.description ? <p className="muted">{row.description}</p> : null}
-                  {row.isActive !== undefined && (
-                    <div className="booking-card-status">
-                      <ErpStatusBadge status={row.isActive ? 'active' : 'inactive'}>
-                        {row.isActive ? 'active' : 'inactive'}
-                      </ErpStatusBadge>
-                    </div>
-                  )}
-                </div>
-                <div className="booking-card-actions">
-                  <ErpButton variant="secondary" onClick={() => openEditor(row)}>
-                    Edit
-                  </ErpButton>
-                  <ErpOverflow
-                    items={[{ label: 'Remove', danger: true, onClick: () => setPendingDelete({ kind: tab, row }) }]}
-                  />
-                </div>
-              </article>
-            ))}
+          <div className="erp-table-scroll">
+            <table className="erp-data-table adm-table">
+              <thead>
+                <tr>
+                  <th>{tab === 'dropdowns' ? 'Label' : tab === 'configs' ? 'Key' : 'Name'}</th>
+                  <th className={tab === 'dropdowns' ? 'num' : undefined}>{detailHead}</th>
+                  {tab !== 'configs' ? <th>Status</th> : null}
+                  <th className="adm-actions" aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {list.items.map((row) => (
+                  <tr key={row._id || row.key} className="erp-row-click" onClick={() => openEditor(row)}>
+                    <td className="adm-primary">
+                      <AdminCell title={rowTitle(row)} sub={rowSub(row)} />
+                    </td>
+                    <td data-label={detailHead} className={tab === 'dropdowns' ? 'num' : undefined}>
+                      {rowDetail(row)}
+                    </td>
+                    {tab !== 'configs' ? (
+                      <td data-label="Status">
+                        {row.isActive !== undefined ? (
+                          <AdminStatus status={row.isActive ? 'active' : 'inactive'} />
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                    ) : null}
+                    <AdminRowActions>
+                      <ErpButton variant="ghost" size="sm" icon="pencil" onClick={() => openEditor(row)}>
+                        Edit
+                      </ErpButton>
+                      <ErpButton
+                        variant="ghost"
+                        size="sm"
+                        iconOnly
+                        icon="trash"
+                        aria-label={`Remove ${rowTitle(row)}`}
+                        title="Remove"
+                        onClick={() => {
+                          setDeleteError('');
+                          setPendingDelete({ kind: tab, row });
+                        }}
+                      />
+                    </AdminRowActions>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
-        {list.total > 0 && <ErpPager {...list.pagerProps} noun={noun} />}
-      </ErpCard>
+      </AdminTableCard>
 
       <ErpModal
         open={Boolean(editing)}
         title={`${editing?._id || editing?.key ? 'Edit' : 'Add'} ${noun}`}
+        size="md"
         onClose={() => setEditing(null)}
         footer={
           <>
-            <ErpButton variant="secondary" onClick={() => setEditing(null)}>
+            <ErpButton variant="secondary" onClick={() => setEditing(null)} disabled={saving}>
               Cancel
             </ErpButton>
-            <ErpButton disabled={saving} onClick={save}>
-              {saving ? 'Saving…' : 'Save'}
+            <ErpButton loading={saving} onClick={save}>
+              {editing?._id || editing?.key ? 'Save changes' : `Add ${noun}`}
             </ErpButton>
           </>
         }
       >
+        {modalError && <ErpBanner variant="danger">{modalError}</ErpBanner>}
         {editing?.kind === 'dropdowns' && (
-          <div className="erp-form-grid">
-            <div className="field">
-              <label>Value</label>
-              <input className="erp-search" value={form.value || ''} onChange={setField('value')} />
-            </div>
-            <div className="field">
-              <label>Label</label>
-              <input className="erp-search" value={form.label || ''} onChange={setField('label')} />
-            </div>
-            <div className="field">
-              <label>Sort order</label>
-              <input className="erp-search" type="number" value={form.sortOrder ?? 0} onChange={setField('sortOrder')} />
-            </div>
-            <label className="row">
-              <input type="checkbox" checked={Boolean(form.isActive)} onChange={setField('isActive')} /> Active
-            </label>
+          <div className="adm-form">
+            <AdminFormSection title={groupLabel} description="Shown in student, tutor and parent dropdowns.">
+              <ErpInput label="Label" value={form.label || ''} onChange={setField('label')} helper="What people see" />
+              <ErpInput label="Value" value={form.value || ''} onChange={setField('value')} helper="Stored value" />
+              <ErpInput label="Sort order" type="number" value={form.sortOrder ?? 0} onChange={setField('sortOrder')} />
+              <div />
+              <div className="erp-form-span">
+                <AdminSwitch
+                  label="Active"
+                  help="Inactive options are hidden from dropdowns."
+                  checked={form.isActive}
+                  onChange={setField('isActive')}
+                />
+              </div>
+            </AdminFormSection>
           </div>
         )}
         {editing?.kind === 'countries' && (
-          <div className="erp-form-grid">
-            <div className="field">
-              <label>Name</label>
-              <input className="erp-search" value={form.name || ''} onChange={setField('name')} />
-            </div>
-            <div className="field">
-              <label>ISO code</label>
-              <input className="erp-search" value={form.code || ''} onChange={setField('code')} />
-            </div>
-            <div className="field">
-              <label>Currency</label>
-              <input className="erp-search" value={form.currency || ''} onChange={setField('currency')} />
-            </div>
-            <div className="field">
-              <label>Symbol</label>
-              <input className="erp-search" value={form.currencySymbol || ''} onChange={setField('currencySymbol')} />
-            </div>
-            <div className="field">
-              <label>Default timezone</label>
-              <input className="erp-search" value={form.defaultTimezone || ''} onChange={setField('defaultTimezone')} />
-            </div>
-            <div className="field">
-              <label>Timezones (comma separated)</label>
-              <input className="erp-search" value={form.timezones || ''} onChange={setField('timezones')} />
-            </div>
-            <label className="row">
-              <input type="checkbox" checked={Boolean(form.isActive)} onChange={setField('isActive')} /> Active
-            </label>
+          <div className="adm-form">
+            <AdminFormSection title="Country">
+              <ErpInput label="Name" value={form.name || ''} onChange={setField('name')} />
+              <ErpInput label="ISO code" value={form.code || ''} onChange={setField('code')} />
+            </AdminFormSection>
+            <AdminFormSection title="Money and time">
+              <ErpInput label="Currency" value={form.currency || ''} onChange={setField('currency')} helper="ISO 4217 code" />
+              <ErpInput label="Symbol" optional value={form.currencySymbol || ''} onChange={setField('currencySymbol')} />
+              <ErpInput label="Default timezone" value={form.defaultTimezone || ''} onChange={setField('defaultTimezone')} />
+              <ErpInput
+                label="Timezones"
+                optional
+                value={form.timezones || ''}
+                onChange={setField('timezones')}
+                helper="Comma separated"
+              />
+              <div className="erp-form-span">
+                <AdminSwitch label="Active" checked={form.isActive} onChange={setField('isActive')} />
+              </div>
+            </AdminFormSection>
           </div>
         )}
         {(editing?.kind === 'boards' || editing?.kind === 'levels') && (
-          <div className="erp-form-grid">
-            <div className="field">
-              <label>Name</label>
-              <input className="erp-search" value={form.name || ''} onChange={setField('name')} />
-            </div>
-            {editing.kind === 'boards' ? (
-              <div className="field">
-                <label>Code</label>
-                <input className="erp-search" value={form.code || ''} onChange={setField('code')} />
+          <div className="adm-form">
+            <AdminFormSection>
+              <ErpInput label="Name" value={form.name || ''} onChange={setField('name')} />
+              {editing.kind === 'boards' ? (
+                <ErpInput label="Code" optional value={form.code || ''} onChange={setField('code')} />
+              ) : (
+                <ErpInput label="Sort order" type="number" value={form.sortOrder ?? 0} onChange={setField('sortOrder')} />
+              )}
+              <ErpSelect
+                label="Country"
+                value={form.countryId || ''}
+                options={countryOptions}
+                onChange={setField('countryId')}
+              />
+              <div />
+              <div className="erp-form-span">
+                <AdminSwitch label="Active" checked={form.isActive} onChange={setField('isActive')} />
               </div>
-            ) : (
-              <div className="field">
-                <label>Sort order</label>
-                <input className="erp-search" type="number" value={form.sortOrder ?? 0} onChange={setField('sortOrder')} />
-              </div>
-            )}
-            <ErpSelect label="Country" value={form.countryId || ''} options={countryOptions} onChange={setField('countryId')} />
-            <label className="row">
-              <input type="checkbox" checked={Boolean(form.isActive)} onChange={setField('isActive')} /> Active
-            </label>
+            </AdminFormSection>
           </div>
         )}
         {editing?.kind === 'subjects' && (
-          <div className="erp-form-grid">
-            <div className="field">
-              <label>Name</label>
-              <input className="erp-search" value={form.name || ''} onChange={setField('name')} />
-            </div>
-            <div className="field">
-              <label>Code</label>
-              <input className="erp-search" value={form.code || ''} onChange={setField('code')} />
-            </div>
-            <ErpSelect
-              label="Category"
-              value={form.category || ''}
-              options={categoryOptions}
-              onChange={setField('category')}
-            />
-            <div className="field">
-              <label>Levels</label>
-              <div className="row">
-                {levelOptions.map((level) => (
-                  <label key={level.value} className="row" style={{ gap: '0.35rem' }}>
-                    <input
-                      type="checkbox"
-                      checked={(form.levels || []).includes(level.value)}
-                      onChange={() => toggleLevel(level.value)}
-                    />
-                    {level.label}
-                  </label>
-                ))}
+          <div className="adm-form">
+            <AdminFormSection>
+              <ErpInput label="Name" value={form.name || ''} onChange={setField('name')} />
+              <ErpInput label="Code" optional value={form.code || ''} onChange={setField('code')} />
+              <ErpSelect
+                label="Category"
+                value={form.category || ''}
+                options={categoryOptions}
+                onChange={setField('category')}
+              />
+              <div className="adm-field-group">
+                <span className="erp-label">Levels</span>
+                <div className="adm-checks">
+                  {levelOptions.map((level) => (
+                    <label key={level.value} className="erp-check">
+                      <input
+                        type="checkbox"
+                        checked={(form.levels || []).includes(level.value)}
+                        onChange={() => toggleLevel(level.value)}
+                      />
+                      {level.label}
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="field" style={{ gridColumn: '1 / -1' }}>
-              <label>Description</label>
-              <textarea className="erp-search" value={form.description || ''} onChange={setField('description')} />
-            </div>
-            <label className="row">
-              <input type="checkbox" checked={Boolean(form.isActive)} onChange={setField('isActive')} /> Active
-            </label>
+              <div className="erp-form-span">
+                <ErpTextarea
+                  label="Description"
+                  optional
+                  rows={3}
+                  value={form.description || ''}
+                  onChange={setField('description')}
+                />
+              </div>
+              <div className="erp-form-span">
+                <AdminSwitch label="Active" checked={form.isActive} onChange={setField('isActive')} />
+              </div>
+            </AdminFormSection>
           </div>
         )}
         {editing?.kind === 'configs' && (
-          <div className="erp-form-grid">
-            <div className="field">
-              <label>Key</label>
-              <input className="erp-search" value={form.key || ''} onChange={setField('key')} readOnly={Boolean(editing.key)} />
-            </div>
-            <div className="field">
-              <label>Value</label>
-              <input className="erp-search" value={form.value || ''} onChange={setField('value')} />
-            </div>
-            <div className="field" style={{ gridColumn: '1 / -1' }}>
-              <label>Description</label>
-              <input className="erp-search" value={form.description || ''} onChange={setField('description')} />
-            </div>
+          <div className="adm-form">
+            <AdminFormSection>
+              <div>
+                <ErpInput
+                  label="Key"
+                  value={form.key || ''}
+                  onChange={setField('key')}
+                  readOnly={Boolean(editing.key)}
+                  helper={editing.key ? 'Keys cannot be renamed.' : null}
+                />
+                {!editing.key && configs.some((c) => c.key === String(form.key || '').trim()) ? (
+                  <label className="erp-check" style={{ marginTop: '0.5rem' }}>
+                    <input type="checkbox" checked={Boolean(form.overwrite)} onChange={setField('overwrite')} />
+                    This key already exists. Overwrite it
+                  </label>
+                ) : null}
+              </div>
+              <ErpSelect
+                label="Value type"
+                value={form.valueType || 'text'}
+                options={CONFIG_VALUE_TYPE_OPTIONS}
+                onChange={setField('valueType')}
+              />
+              <div className="erp-form-span">
+                <ErpTextarea
+                  label="Value"
+                  className={form.valueType === 'json' ? 'adm-mono' : ''}
+                  rows={form.valueType === 'json' ? 8 : 2}
+                  value={form.value || ''}
+                  onChange={setField('value')}
+                />
+              </div>
+              <div className="erp-form-span">
+                <ErpInput label="Description" optional value={form.description || ''} onChange={setField('description')} />
+              </div>
+            </AdminFormSection>
           </div>
         )}
       </ErpModal>
@@ -549,12 +707,25 @@ export default function AdminSettingsPage() {
         open={Boolean(pendingDelete)}
         title={`Remove ${noun}`}
         message={
-          pendingDelete
-            ? `Remove ${pendingDelete.row.name || pendingDelete.row.label || pendingDelete.row.key}? This list is used across student, tutor, and parent screens.`
-            : ''
+          pendingDelete ? (
+            <>
+              {`Remove ${pendingDelete.row.name || pendingDelete.row.label || pendingDelete.row.key}? This list is used across student, tutor, and parent screens.`}
+              {pendingDelete.kind === 'subjects'
+                ? ' Subjects in use cannot be deleted; deactivate them instead from Edit.'
+                : ''}
+              {deleteError ? (
+                <span className="error-banner" style={{ display: 'block', marginTop: '0.75rem' }}>
+                  {deleteError}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            ''
+          )
         }
         confirmLabel="Remove"
         danger
+        busy={deleteBusy}
         onCancel={() => setPendingDelete(null)}
         onConfirm={removeRow}
       />

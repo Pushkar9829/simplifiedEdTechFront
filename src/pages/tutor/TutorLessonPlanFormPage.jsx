@@ -1,8 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { addLessonPlan, getLessonPlan, listSubjects, updateLessonPlan } from '../../api';
-import { ErpSelect } from '../../components/erp';
+import {
+  ErpBanner,
+  ErpButton,
+  ErpCard,
+  ErpInput,
+  ErpPageHeader,
+  ErpSelect,
+  ErpSkeleton,
+  ErpTextarea,
+  Icon,
+} from '../../components/erp';
 import { LESSON_STATUS_OPTIONS, subjectOptions } from './tutorOptions';
+import { errorMessage } from '../../utils/errors';
+import './tutor.css';
 
 const emptyForm = {
   title: '',
@@ -40,7 +52,7 @@ export default function TutorLessonPlanFormPage() {
           setForm((f) => ({ ...f, subjectId: f.subjectId || list[0]._id }));
         }
       } catch (err) {
-        setError(err.message);
+        setError(errorMessage(err));
       } finally {
         setLoading(false);
       }
@@ -56,75 +68,94 @@ export default function TutorLessonPlanFormPage() {
       else await addLessonPlan(form);
       navigate('/tutor/lesson-plans');
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="page stack">
-      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ margin: 0 }}>{id ? 'Edit lesson plan' : 'Create lesson plan'}</h1>
-        <Link to="/tutor/lesson-plans" className="btn secondary">
-          Back to plans
-        </Link>
-      </div>
+    <div className="page stack tutor-page">
+      <ErpPageHeader
+        title={id ? 'Edit lesson plan' : 'Create lesson plan'}
+        subtitle="Objectives first, then the content you will teach."
+        actions={
+          <Link to="/tutor/lesson-plans" className="erp-btn-ghost">
+            <Icon name="arrow-left" size={16} />
+            Back to plans
+          </Link>
+        }
+      />
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <ErpBanner variant="danger" onDismiss={() => setError('')}>
+          {error}
+        </ErpBanner>
+      )}
 
       {loading ? (
-        <div className="erp-card empty">Loading…</div>
+        <ErpCard>
+          <ErpSkeleton lines={6} />
+        </ErpCard>
       ) : (
-        <form className="erp-card grid two" onSubmit={onSubmit}>
-          <div className="field">
-            <label>Title</label>
-            <input
-              className="erp-search"
-              required
-              value={form.title}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            />
-          </div>
-          <ErpSelect
-            label="Subject"
-            value={form.subjectId}
-            options={
-              subjects.length
-                ? subjectOptions(subjects)
-                : [{ value: '', label: 'No subjects', disabled: true }]
-            }
-            onChange={(e) => setForm((f) => ({ ...f, subjectId: e.target.value }))}
-          />
-          <ErpSelect
-            label="Status"
-            value={form.status}
-            options={LESSON_STATUS_OPTIONS}
-            onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-          />
-          <div className="field" style={{ gridColumn: '1 / -1' }}>
-            <label>Objectives</label>
-            <textarea
-              className="erp-search"
-              value={form.objectives}
-              onChange={(e) => setForm((f) => ({ ...f, objectives: e.target.value }))}
-            />
-          </div>
-          <div className="field" style={{ gridColumn: '1 / -1' }}>
-            <label>Content</label>
-            <textarea
-              className="erp-search"
-              value={form.content}
-              onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-            />
-          </div>
-          <div className="erp-sticky-actions" style={{ gridColumn: '1 / -1' }}>
-            <button className="btn" disabled={saving}>
-              {saving ? 'Saving…' : id ? 'Save plan' : 'Create plan'}
-            </button>
-            <Link to="/tutor/lesson-plans" className="btn secondary">
+        <form className="tutor-form" onSubmit={onSubmit}>
+          <ErpCard heading="Basics">
+            <div className="erp-form-grid">
+              <div className="erp-form-span">
+                <ErpInput
+                  label="Title"
+                  required
+                  placeholder="e.g. Projectile motion — worked examples"
+                  value={form.title}
+                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                />
+              </div>
+              <ErpSelect
+                label="Subject"
+                value={form.subjectId}
+                options={
+                  subjects.length ? subjectOptions(subjects) : [{ value: '', label: 'No subjects', disabled: true }]
+                }
+                onChange={(e) => setForm((f) => ({ ...f, subjectId: e.target.value }))}
+              />
+              <ErpSelect
+                label="Status"
+                value={form.status}
+                options={LESSON_STATUS_OPTIONS}
+                helper="Ready plans can be bundled into a course"
+                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+              />
+            </div>
+          </ErpCard>
+
+          <ErpCard heading="Lesson">
+            <div className="stack">
+              <ErpTextarea
+                label="Objectives"
+                optional
+                rows={3}
+                helper="What the student should be able to do afterwards"
+                value={form.objectives}
+                onChange={(e) => setForm((f) => ({ ...f, objectives: e.target.value }))}
+              />
+              <ErpTextarea
+                label="Content"
+                optional
+                rows={8}
+                helper="Outline, examples, practice questions"
+                value={form.content}
+                onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
+              />
+            </div>
+          </ErpCard>
+
+          <div className="tutor-form-footer">
+            <Link to="/tutor/lesson-plans" className="erp-btn-secondary">
               Cancel
             </Link>
+            <ErpButton type="submit" loading={saving}>
+              {saving ? 'Saving…' : id ? 'Save plan' : 'Create plan'}
+            </ErpButton>
           </div>
         </form>
       )}

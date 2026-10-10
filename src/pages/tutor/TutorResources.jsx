@@ -1,49 +1,59 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { deleteResource, listResources } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import {
+  ErpBadge,
+  ErpBanner,
   ErpButton,
   ErpCard,
   ErpConfirm,
   ErpDataTable,
-  ErpList,
-  ErpListItem,
-  ErpOverflow,
+  ErpEmptyState,
+  ErpLoadingState,
   ErpPager,
   ErpPageHeader,
   ErpSearch,
-  ErpTabs,
+  ErpSelect,
+  Icon,
   useIsPhone,
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
 import { money } from '../../utils/format';
 import { useCatalog } from '../../context/CatalogContext';
 import { titleCase } from './tutorOptions';
+import { errorMessage } from '../../utils/errors';
+import TutorRowMenu from './TutorRowMenu';
+import './tutor.css';
 
 export default function TutorResources() {
   const phone = useIsPhone();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { options } = useCatalog();
   const [items, setItems] = useState([]);
   const [filterType, setFilterType] = useState('');
   const [error, setError] = useState('');
+  const [msg, setMsg] = useState('');
+  const [deleting, setDeleting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pendingDelete, setPendingDelete] = useState(null);
 
+  const me = user?.id ?? user?._id;
+
   const load = async () => {
-    if (!user?._id) return;
+    if (!me) return;
     setLoading(true);
     setError('');
     try {
       const r = await listResources({
-        createdBy: user._id,
+        createdBy: String(me),
         type: filterType,
         includeInactive: 'true',
       });
       setItems(r.items || []);
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -51,7 +61,7 @@ export default function TutorResources() {
 
   useEffect(() => {
     load();
-  }, [user?._id, filterType]);
+  }, [me, filterType]);
 
   const list = useListFilter(
     items,
@@ -59,99 +69,143 @@ export default function TutorResources() {
     { resetKey: filterType }
   );
 
-  return (
-    <div className="page stack">
-      <ErpPageHeader subtitle="Files you share with students." />
-      {error && <div className="error-banner">{error}</div>}
+  const typeOptions = options('resource_type', { all: 'All types' }).map((o) => ({
+    value: o.value || 'all',
+    label: o.label,
+  }));
+  const typeIcon = (t) =>
+    t === 'video' ? 'video' : t === 'past_paper' || t === 'worksheet' ? 'clipboard-check' : 'file-text';
+  const accessCell = (r) => (
+    <span className="tutor-cell-stack">
+      {r.accessType === 'paid' ? (
+        <ErpBadge tone="brand">Paid · {money(r.price, r.currency)}</ErpBadge>
+      ) : (
+        <ErpBadge tone="success">Free</ErpBadge>
+      )}
+      {r.downloadableUntil && (
+        <span className="muted text-erp-xs">until {new Date(r.downloadableUntil).toLocaleDateString()}</span>
+      )}
+    </span>
+  );
+  const menuFor = (r) => [
+    { label: 'Edit', icon: 'pencil', onClick: () => navigate(`/tutor/resources/${r._id}/edit`) },
+    { label: 'Delete', icon: 'trash', danger: true, onClick: () => setPendingDelete(r) },
+  ];
 
-      <div className="avail-bar">
-        <ErpTabs
-          value={filterType || 'all'}
-          onChange={(value) => setFilterType(value === 'all' ? '' : value)}
-          tabs={options('resource_type', { all: 'All types' }).map((o) => ({
-            value: o.value || 'all',
-            label: o.label,
-          }))}
-        />
-        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search resources" />
-        <div className="avail-bar-actions">
+  return (
+    <div className="page stack tutor-page">
+      <ErpPageHeader
+        subtitle="Notes, worksheets and videos you share with students — free or paid."
+        actions={
           <Link to="/tutor/resources/new" className="erp-btn-primary">
+            <Icon name="plus" size={16} />
             Create resource
           </Link>
+        }
+      />
+      {error && (
+        <ErpBanner variant="danger" onDismiss={() => setError('')}>
+          {error}
+        </ErpBanner>
+      )}
+      {msg && (
+        <ErpBanner variant="success" onDismiss={() => setMsg('')}>
+          {msg}
+        </ErpBanner>
+      )}
+
+      <div className="erp-filter-bar tutor-toolbar">
+        <div className="tutor-toolbar-left">
+          <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search title, topic or subject" />
+        </div>
+        <div className="tutor-toolbar-right">
+          <ErpSelect
+            inline
+            aria-label="Resource type"
+            value={filterType || 'all'}
+            options={typeOptions}
+            onChange={(e) => setFilterType(e.target.value === 'all' ? '' : e.target.value)}
+          />
         </div>
       </div>
 
-      <ErpCard className="erp-card-flush">
+      <ErpCard flush>
         {loading ? (
-          <div className="empty">Loading resources…</div>
+          <ErpLoadingState message="Loading resources…" />
         ) : !items.length ? (
-          <div className="empty">
-            No resources yet.{' '}
-            <Link to="/tutor/resources/new">Upload your first resource</Link>
-          </div>
+          <ErpEmptyState
+            icon="folder"
+            title={filterType ? 'No resources of this type' : 'No resources yet'}
+            description="Upload notes, past papers or videos for your students."
+            action={
+              filterType ? (
+                <ErpButton variant="secondary" onClick={() => setFilterType('')}>
+                  Show all types
+                </ErpButton>
+              ) : (
+                <Link to="/tutor/resources/new" className="erp-btn-primary">
+                  Upload your first resource
+                </Link>
+              )
+            }
+          />
         ) : list.noMatch ? (
-          <div className="empty">No resources match that search.</div>
+          <ErpEmptyState icon="search" title="No resources match that search" />
         ) : phone ? (
-          <div style={{ padding: '0.65rem' }}>
-            <ErpList>
-              {list.items.map((r) => (
-                <ErpListItem
-                  key={r._id}
-                  title={r.title}
-                  meta={`${titleCase(r.type)} · ${r.subjectId?.name || 'Resource'} · ${r.level}`}
-                  to={`/tutor/resources/${r._id}/edit`}
-                  actions={
-                    <ErpOverflow
-                      items={[
-                        { label: 'Edit', to: `/tutor/resources/${r._id}/edit` },
-                        { label: 'Delete', danger: true, onClick: () => setPendingDelete(r) },
-                      ]}
-                    />
-                  }
-                >
-                  <div className="muted">
-                    {r.accessType === 'paid' ? `Paid · ${money(r.price, r.currency)}` : 'Free'}
-                  </div>
-                </ErpListItem>
-              ))}
-            </ErpList>
-          </div>
+          <ul className="tutor-booking-cards">
+            {list.items.map((r) => (
+              <li key={r._id} className="tutor-booking-card">
+                <Link to={`/tutor/resources/${r._id}/edit`} className="tutor-booking-card-hit" style={{ textDecoration: 'none' }}>
+                  <span className="erp-attention-icon is-brand">
+                    <Icon name={typeIcon(r.type)} size={16} />
+                  </span>
+                  <span className="tutor-booking-card-main">
+                    <strong>{r.title}</strong>
+                    <span className="muted">
+                      {[titleCase(r.type), r.subjectId?.name, r.level].filter(Boolean).join(' · ')}
+                    </span>
+                    {accessCell(r)}
+                  </span>
+                </Link>
+                <TutorRowMenu items={menuFor(r)} label={`Actions for ${r.title}`} />
+              </li>
+            ))}
+          </ul>
         ) : (
           <div className="erp-table-scroll">
             <ErpDataTable>
               <thead>
                 <tr>
-                  <th>Title</th>
+                  <th>Resource</th>
                   <th>Type</th>
                   <th>Subject</th>
-                    <th>Level</th>
-                    <th>Access</th>
-                    <th />
+                  <th>Level</th>
+                  <th>Access</th>
+                  <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
                 {list.items.map((r) => (
-                  <tr key={r._id}>
+                  <tr key={r._id} className="erp-row-click" onClick={() => navigate(`/tutor/resources/${r._id}/edit`)}>
                     <td>
-                      <strong>{r.title}</strong>
-                      {r.topic && <div className="muted">{r.topic}</div>}
+                      <span className="tutor-cell-person">
+                        <span className="erp-attention-icon is-brand">
+                          <Icon name={typeIcon(r.type)} size={16} />
+                        </span>
+                        <span className="tutor-cell-stack">
+                          <strong>{r.title}</strong>
+                          {r.topic && <span className="muted text-erp-xs">{r.topic}</span>}
+                        </span>
+                      </span>
                     </td>
-                    <td>{titleCase(r.type)}</td>
-                    <td>{r.subjectId?.name || '—'}</td>
+                    <td>
+                      <span className="erp-tag">{titleCase(r.type)}</span>
+                    </td>
+                    <td>{r.subjectId?.name || <span className="muted">—</span>}</td>
                     <td>{r.level}</td>
-                    <td>
-                      {r.accessType === 'paid' ? `Paid · ${money(r.price, r.currency)}` : 'Free'}
-                      {r.downloadableUntil && (
-                        <div className="muted">until {new Date(r.downloadableUntil).toLocaleDateString()}</div>
-                      )}
-                    </td>
-                    <td className="row">
-                      <Link to={`/tutor/resources/${r._id}/edit`} className="erp-btn-secondary">
-                        Edit
-                      </Link>
-                      <ErpButton variant="danger" onClick={() => setPendingDelete(r)}>
-                        Delete
-                      </ErpButton>
+                    <td>{accessCell(r)}</td>
+                    <td className="tutor-cell-actions">
+                      <TutorRowMenu items={menuFor(r)} label={`Actions for ${r.title}`} />
                     </td>
                   </tr>
                 ))}
@@ -168,15 +222,20 @@ export default function TutorResources() {
         message={pendingDelete ? `Delete “${pendingDelete.title}”?` : ''}
         confirmLabel="Delete"
         danger
-        onCancel={() => setPendingDelete(null)}
+        busy={deleting}
+        onCancel={() => !deleting && setPendingDelete(null)}
         onConfirm={async () => {
+          setDeleting(true);
           try {
             await deleteResource(pendingDelete._id);
             setPendingDelete(null);
+            setMsg('Resource deleted');
             load();
           } catch (err) {
-            setError(err.message);
+            setError(errorMessage(err));
             setPendingDelete(null);
+          } finally {
+            setDeleting(false);
           }
         }}
       />

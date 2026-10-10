@@ -1,28 +1,41 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listChildren } from '../../api';
-import { ErpCard, ErpPageHeader, ErpSelect } from '../../components/erp';
+import {
+  ErpBanner,
+  ErpButton,
+  ErpCard,
+  ErpEmptyState,
+  ErpLoadingState,
+  ErpPageHeader,
+} from '../../components/erp';
+import { childLabel, useParentChild } from '../../context/ParentChildContext';
 import StudentTutors from '../student/StudentTutors';
+import BookingForBar from './BookingForBar';
+import { firstName } from './parentData';
 
 export default function ParentTutors() {
-  const [children, setChildren] = useState([]);
-  const [childId, setChildId] = useState('');
-  const [loading, setLoading] = useState(true);
+  const { children, selectedChildId, selectedChild, setSelectedChildId, loading, error, refreshChildren } =
+    useParentChild();
 
-  useEffect(() => {
-    listChildren()
-      .then((rows) => {
-        const list = rows || [];
-        setChildren(list);
-        const first = list[0]?.studentUserId?._id || list[0]?.studentUserId;
-        if (first) setChildId(String(first));
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  if (loading && !children.length) {
+    return <ErpLoadingState message="Loading your children…" />;
+  }
 
-  if (loading) {
-    return <div className="empty">Loading children…</div>;
+  if (error && !children.length) {
+    return (
+      <div className="page stack">
+        <ErpBanner
+          variant="danger"
+          title="Could not load your children"
+          actions={
+            <ErpButton variant="secondary" size="sm" icon="refresh" onClick={() => refreshChildren()}>
+              Retry
+            </ErpButton>
+          }
+        >
+          {error}
+        </ErpBanner>
+      </div>
+    );
   }
 
   if (!children.length) {
@@ -30,33 +43,40 @@ export default function ParentTutors() {
       <div className="page stack">
         <ErpPageHeader subtitle="Book a tutor for a linked child." />
         <ErpCard>
-          <div className="empty">
-            Link a child before you search. <Link to="/parent/children/link">Link a child</Link> with their registered
-            phone.
-          </div>
+          <ErpEmptyState
+            icon="users"
+            title="Link a child before you search"
+            description="Classes are booked for a specific child. Link them with the phone number they registered with."
+            action={
+              <Link to="/parent/children/link" className="erp-btn-primary">
+                Link a child
+              </Link>
+            }
+          />
         </ErpCard>
       </div>
     );
   }
 
+  const childFirst = selectedChild ? firstName(childLabel(selectedChild)) : '';
+
   return (
-    <div className="stack">
-      <div className="avail-bar">
-        <ErpSelect
-          inline
-          value={childId}
-          options={children.map((c) => ({
-            value: String(c.studentUserId?._id || c.studentUserId),
-            label: `Book for ${c.studentUserId?.name || 'child'}`,
-          }))}
-          onChange={(e) => setChildId(e.target.value)}
-        />
-      </div>
-      {childId ? (
-        <StudentTutors profileBase={`/parent/tutors/${childId}`} />
+    <div className="page stack">
+      <BookingForBar
+        links={children}
+        selectedId={selectedChildId}
+        onChange={setSelectedChildId}
+        help={
+          childFirst
+            ? `Classes you book here are scheduled for ${childFirst}; invoices are billed to you.`
+            : 'Choose which child you are booking for.'
+        }
+      />
+      {selectedChildId ? (
+        <StudentTutors profileBase={`/parent/tutors/${selectedChildId}`} />
       ) : (
         <ErpCard>
-          <div className="empty">Select a child to search tutors.</div>
+          <ErpEmptyState icon="user" title="Select a child to search tutors" />
         </ErpCard>
       )}
     </div>

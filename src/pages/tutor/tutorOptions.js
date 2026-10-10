@@ -49,3 +49,95 @@ export function studentOptions(students = []) {
     })),
   ];
 }
+
+/** Tutor-local date/time with the zone abbreviation, e.g. "7 Oct 2026, 18:00 GMT+5:30". */
+export function localTime(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  try {
+    return d.toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }) + ` ${zoneAbbr(d)}`;
+  } catch {
+    return d.toLocaleString();
+  }
+}
+
+function zoneAbbr(d) {
+  try {
+    const part = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' })
+      .formatToParts(d)
+      .find((p) => p.type === 'timeZoneName');
+    return part?.value || '';
+  } catch {
+    return '';
+  }
+}
+
+export function idOf(v) {
+  return v && typeof v === 'object' ? String(v._id ?? v.id ?? '') : String(v ?? '');
+}
+
+/** Distinct students from bookings (newest first). Stopgap until a students endpoint exists. */
+export function studentsFromBookings(bookings = []) {
+  const uniq = new Map();
+  bookings.forEach((b) => {
+    const s = b.studentUserId;
+    const id = idOf(s);
+    if (id && s && typeof s === 'object' && !uniq.has(id)) uniq.set(id, { ...s, _id: id });
+  });
+  return [...uniq.values()];
+}
+
+export const STUDENT_PICKER_QUERY = { limit: 500, sort: '-startAt' };
+
+/** "Good morning/afternoon/evening" by the viewer's local clock. */
+export function greetingWord(date = new Date()) {
+  const h = date.getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+export function firstName(name) {
+  return String(name || '').trim().split(/\s+/)[0] || '';
+}
+
+/** Short relative label for a start time: "Live now", "Starts in 2h 15m", "Tomorrow, 18:00". */
+export function startsLabel(startAt, endAt) {
+  const start = new Date(startAt);
+  if (Number.isNaN(start.getTime())) return '';
+  const now = Date.now();
+  const end = endAt ? new Date(endAt).getTime() : start.getTime() + 3600000;
+  const diff = start.getTime() - now;
+  if (diff <= 0 && now < end) return 'In progress';
+  if (diff <= 0) return 'Started';
+  const mins = Math.round(diff / 60000);
+  if (mins < 60) return `Starts in ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Starts in ${hours}h${mins % 60 ? ` ${mins % 60}m` : ''}`;
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const time = start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  if (start.toDateString() === tomorrow.toDateString()) return `Tomorrow, ${time}`;
+  return `${start.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}, ${time}`;
+}
+
+export function studentName(b) {
+  return b?.studentUserId?.name || b?.studentUserId?.phone || 'Student';
+}
+
+/** A past, non-cancelled class still missing its session summary. */
+export function needsReport(b) {
+  return (
+    b.status !== 'cancelled' &&
+    b.meetingStatus !== 'no_show' &&
+    !b.consumed &&
+    new Date(b.startAt) < new Date() &&
+    (b.status !== 'completed' || !b.sessionReportId)
+  );
+}
+
+export const OPEN_CHANGE_STATUSES = ['pending', 'slots_offered', 'awaiting_replacement', 'awaiting_approval'];

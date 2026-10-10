@@ -20,12 +20,14 @@ export const USER_STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
   { value: 'inactive', label: 'Inactive' },
   { value: 'suspended', label: 'Suspended' },
+  { value: 'blacklisted', label: 'Blacklisted' },
 ];
 
 export const USER_STATUS_SET_OPTIONS = [
   { value: 'active', label: 'Active' },
   { value: 'inactive', label: 'Inactive' },
   { value: 'suspended', label: 'Suspended' },
+  { value: 'blacklisted', label: 'Blacklisted' },
 ];
 
 export const PAYMENT_STATUS_OPTIONS = [
@@ -35,7 +37,27 @@ export const PAYMENT_STATUS_OPTIONS = [
   { value: 'paid', label: 'Paid' },
   { value: 'failed', label: 'Failed' },
   { value: 'refunded', label: 'Refunded' },
+  { value: 'cancelled', label: 'Cancelled' },
 ];
+
+/** Admin payment transitions, mirrored from the backend (payment.service ADMIN_TRANSITIONS). */
+export const PAYMENT_TRANSITIONS = {
+  pending: ['paid', 'failed'],
+  awaiting_confirmation: ['paid', 'failed', 'pending'],
+  failed: ['paid', 'pending'],
+  paid: ['refunded'],
+  refunded: [],
+  cancelled: [],
+};
+
+export const PAYMENT_ACTION_LABELS = {
+  paid: 'Mark paid',
+  failed: 'Mark failed',
+  pending: 'Reset to pending',
+  refunded: 'Refund',
+};
+
+export const REFUND_OPEN_STATUSES = ['requested', 'accepted', 'disputed'];
 
 export const TICKET_STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -94,3 +116,47 @@ export const CAMPAIGN_CHANNEL_OPTIONS = [
   { value: 'partner', label: 'Partner' },
   { value: 'other', label: 'Other' },
 ];
+
+export const CONFIG_VALUE_TYPE_OPTIONS = [
+  { value: 'text', label: 'Text' },
+  { value: 'json', label: 'JSON' },
+];
+
+export function configValueType(value) {
+  return typeof value === 'string' ? 'text' : 'json';
+}
+
+export function configValueText(value) {
+  if (value === undefined) return '';
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
+
+/** Returns { value } or { error } for a config value typed as text or JSON. */
+export function parseConfigValue(text, type) {
+  if (type !== 'json') return { value: String(text ?? '') };
+  try {
+    return { value: JSON.parse(text) };
+  } catch {
+    return { error: 'Value is not valid JSON. Switch the type to Text to save it as plain text.' };
+  }
+}
+
+/** Amount without a currency symbol (for values stored without a currency). */
+export function plainAmount(n) {
+  return Number(n || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+// Plans are bought by students (parents pay as students) or tutors.
+export const PLAN_AUDIENCE_OPTIONS = [
+  { value: 'student', label: 'Students and parents' },
+  { value: 'tutor', label: 'Tutors' },
+];
+
+/** Display name for a populated user ref. */
+export function personName(u, fallback = '—') {
+  if (!u) return fallback;
+  return u.name || u.phone || fallback;
+}

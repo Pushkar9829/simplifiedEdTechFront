@@ -3,52 +3,146 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { useIsPhone } from '../../hooks/useIsPhone';
+import { statusToVariant } from '../../utils/format';
+import { mediaUrl } from '../../utils/mediaUrl';
+import { Icon } from '../Icon';
 
-export { useIsPhone };
+export { useIsPhone, statusToVariant, Icon };
 
-export function ErpCard({ children, size = 'default', className = '', ...rest }) {
+const cx = (...parts) => parts.filter(Boolean).join(' ');
+
+/**
+ * Card. Optional header row: `heading` (title), `description`, `headerActions`.
+ * `flush` removes padding (for tables/lists), `interactive` adds a hover affordance.
+ */
+export function ErpCard({
+  children,
+  size = 'default',
+  className = '',
+  heading,
+  description,
+  headerActions,
+  flush = false,
+  interactive = false,
+  ...rest
+}) {
   const base = size === 'sm' ? 'erp-card-sm' : 'erp-card';
+  const hasHeader = heading || description || headerActions;
   return (
-    <div className={`${base}${className ? ` ${className}` : ''}`} {...rest}>
+    <div
+      className={cx(base, flush && 'erp-card-flush', interactive && 'erp-card-interactive', className)}
+      {...rest}
+    >
+      {hasHeader ? (
+        <div className="erp-card-header">
+          <div className="erp-card-header-text">
+            {heading ? <h3 className="erp-card-title">{heading}</h3> : null}
+            {description ? <p className="erp-card-description">{description}</p> : null}
+          </div>
+          {headerActions ? <div className="erp-card-actions">{headerActions}</div> : null}
+        </div>
+      ) : null}
       {children}
     </div>
   );
 }
 
+/**
+ * Button. variant: primary | secondary | ghost | danger | icon.
+ * size: sm | md | lg. `icon` / `iconRight` take Icon names; `loading` shows a spinner;
+ * `iconOnly` (+ aria-label) makes a square icon button; `block` = full width.
+ */
 export function ErpButton({
   children,
   variant = 'primary',
+  size = 'md',
+  icon,
+  iconRight,
+  iconOnly = false,
+  loading = false,
+  block = false,
   className = '',
   type = 'button',
+  disabled,
   ...rest
 }) {
   const map = {
     primary: 'erp-btn-primary',
     secondary: 'erp-btn-secondary',
+    ghost: 'erp-btn-ghost',
     danger: 'erp-btn-danger',
     icon: 'erp-icon-btn',
   };
+  const iconSize = size === 'sm' ? 15 : 16;
   return (
     <button
       type={type}
-      className={`${map[variant] || map.primary}${className ? ` ${className}` : ''}`}
+      className={cx(
+        map[variant] || map.primary,
+        size === 'sm' && 'erp-btn-sm',
+        size === 'lg' && 'erp-btn-lg',
+        iconOnly && 'erp-btn-icon-only',
+        block && 'erp-btn-block',
+        loading && 'erp-btn-loading',
+        className
+      )}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...rest}
     >
+      {loading ? (
+        <span className="erp-spinner erp-spinner-sm" aria-hidden="true" />
+      ) : icon ? (
+        <Icon name={icon} size={variant === 'icon' ? 18 : iconSize} />
+      ) : null}
       {children}
+      {iconRight ? <Icon name={iconRight} size={iconSize} /> : null}
     </button>
   );
 }
 
-export function ErpInput({ className = '', label, id, ...rest }) {
-  const inputId = id || rest.name;
+function FieldMessages({ id, helper, error }) {
+  return (
+    <>
+      {error ? (
+        <p className="erp-field-error" id={`${id}-error`} role="alert">
+          {error}
+        </p>
+      ) : null}
+      {helper && !error ? (
+        <p className="erp-field-help" id={`${id}-help`}>
+          {helper}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+function describedBy(id, helper, error, existing) {
+  const ids = [existing, error ? `${id}-error` : null, helper && !error ? `${id}-help` : null];
+  return ids.filter(Boolean).join(' ') || undefined;
+}
+
+/** Labelled text input. Optional `helper` text, `error` message, `optional` marker. */
+export function ErpInput({ className = '', label, id, helper, error, optional = false, ...rest }) {
+  const autoId = useId();
+  const inputId = id || (rest.name ? `${rest.name}-${autoId}` : autoId);
   return (
     <div className="field">
       {label && (
         <label className="erp-label" htmlFor={inputId}>
           {label}
+          {optional ? <span className="erp-label-optional"> (optional)</span> : null}
         </label>
       )}
-      <input id={inputId} className={`erp-input${className ? ` ${className}` : ''}`} {...rest} />
+      <input
+        id={inputId}
+        className={cx('erp-input', className)}
+        aria-invalid={error ? true : undefined}
+        {...rest}
+        aria-describedby={describedBy(inputId, helper, error, rest['aria-describedby'])}
+      />
+      <FieldMessages id={inputId} helper={helper} error={error} />
     </div>
   );
 }
@@ -85,9 +179,13 @@ export function ErpSelect({
   disabled = false,
   required = false,
   placeholder = 'Select',
+  leading = null,
+  helper,
+  error,
   ...rest
 }) {
-  const selectId = id || name;
+  const autoId = useId();
+  const selectId = id || (name ? `${name}-${autoId}` : autoId);
   const listId = useId();
   const wrapRef = useRef(null);
   const menuRef = useRef(null);
@@ -277,7 +375,9 @@ export function ErpSelect({
         aria-controls={listId}
         onClick={() => !disabled && setOpen((o) => !o)}
         onKeyDown={onTriggerKey}
+        aria-invalid={error ? true : undefined}
       >
+        {leading ? <span className="erp-select-leading">{leading}</span> : null}
         <span
           className={`erp-select-trigger-label${
             selected ? '' : ' erp-select-trigger-placeholder'
@@ -337,14 +437,17 @@ export function ErpSelect({
     </div>
   );
 
-  if (!label) return selectNode;
+  if (!label && !helper && !error) return selectNode;
 
   return (
     <div className="field">
-      <label className="erp-label" htmlFor={selectId}>
-        {label}
-      </label>
+      {label ? (
+        <label className="erp-label" htmlFor={selectId}>
+          {label}
+        </label>
+      ) : null}
       {selectNode}
+      <FieldMessages id={selectId} helper={helper} error={error} />
     </div>
   );
 }
@@ -357,66 +460,77 @@ export function ErpDataTable({ children, className = '', ...rest }) {
   );
 }
 
-const STATUS_MAP = {
-  pending: 'erp-status-pending',
-  draft: 'erp-status-pending',
-  awaiting_confirmation: 'erp-status-pending',
-  assigned: 'erp-status-pending',
-  submitted: 'erp-status-shipped',
-  in_review: 'erp-status-shipped',
-  shipped: 'erp-status-shipped',
-  open: 'erp-status-shipped',
-  in_progress: 'erp-status-shipped',
-  approved: 'erp-status-delivered',
-  paid: 'erp-status-delivered',
-  graded: 'erp-status-delivered',
-  completed: 'erp-status-delivered',
-  present: 'erp-status-delivered',
-  active: 'erp-status-delivered',
-  resolved: 'erp-status-delivered',
-  delivered: 'erp-status-delivered',
-  cancelled: 'erp-status-cancelled',
-  failed: 'erp-status-cancelled',
-  rejected: 'erp-status-cancelled',
-  absent: 'erp-status-cancelled',
-  suspended: 'erp-status-cancelled',
-  closed: 'erp-status-cancelled',
-  inactive: 'erp-status-cancelled',
-};
-
-export function statusToVariant(status) {
-  return STATUS_MAP[status] || 'erp-status-shipped';
-}
-
-export function ErpStatusBadge({ status, children, className = '' }) {
+/** Status pill coloured via utils `statusToVariant`. `dot` adds a leading 6px dot. */
+export function ErpStatusBadge({ status, children, className = '', dot = false }) {
   const variant = statusToVariant(status);
   return (
-    <span className={`erp-status-badge ${variant}${className ? ` ${className}` : ''}`}>
-      {children ?? status}
+    <span className={cx('erp-status-badge', variant, dot && 'erp-badge-dot', className)}>
+      {children ?? String(status ?? '').replace(/_/g, ' ')}
     </span>
   );
 }
 
-export function ErpTextarea({ className = '', label, id, ...rest }) {
-  const inputId = id || rest.name;
+const TONE_CLASS = {
+  neutral: 'erp-status-neutral',
+  brand: 'erp-status-brand',
+  success: 'erp-status-delivered',
+  warning: 'erp-status-pending',
+  danger: 'erp-status-cancelled',
+  info: 'erp-status-shipped',
+};
+
+/** Generic pill. tone: neutral | brand | success | warning | danger | info. */
+export function ErpBadge({ tone = 'neutral', dot = false, icon, className = '', children }) {
+  return (
+    <span
+      className={cx('erp-status-badge', TONE_CLASS[tone] || TONE_CLASS.neutral, dot && 'erp-badge-dot', className)}
+    >
+      {icon ? <Icon name={icon} size={12} strokeWidth={2} /> : null}
+      {children}
+    </span>
+  );
+}
+
+export function ErpTextarea({ className = '', label, id, helper, error, optional = false, ...rest }) {
+  const autoId = useId();
+  const inputId = id || (rest.name ? `${rest.name}-${autoId}` : autoId);
   return (
     <div className="field">
       {label && (
         <label className="erp-label" htmlFor={inputId}>
           {label}
+          {optional ? <span className="erp-label-optional"> (optional)</span> : null}
         </label>
       )}
-      <textarea id={inputId} className={`erp-input${className ? ` ${className}` : ''}`} {...rest} />
+      <textarea
+        id={inputId}
+        className={cx('erp-input', className)}
+        aria-invalid={error ? true : undefined}
+        {...rest}
+        aria-describedby={describedBy(inputId, helper, error, rest['aria-describedby'])}
+      />
+      <FieldMessages id={inputId} helper={helper} error={error} />
     </div>
   );
 }
 
-export function ErpPageHeader({ title, subtitle, actions }) {
+/**
+ * Page header: optional `title` (h2) + `badge` (e.g. a status pill), `subtitle`
+ * (one-line page description), optional `meta` row; `actions` sit on the right.
+ * The shell top bar already shows the short page name, so list pages usually pass only subtitle.
+ */
+export function ErpPageHeader({ title, subtitle, actions, badge, meta, className = '' }) {
   return (
-    <div className="erp-page-header">
-      <div>
-        {title ? <h1 className="erp-page-title">{title}</h1> : null}
+    <div className={cx('erp-page-header', className)}>
+      <div className="erp-page-header-text">
+        {title ? (
+          <div className="erp-page-title-row">
+            <h2 className="erp-page-title">{title}</h2>
+            {badge}
+          </div>
+        ) : null}
         {subtitle && <p className="erp-page-subtitle">{subtitle}</p>}
+        {meta ? <div className="erp-page-meta">{meta}</div> : null}
       </div>
       {actions && <div className="erp-header-actions">{actions}</div>}
     </div>
@@ -454,10 +568,22 @@ export function ErpPager({ page, pages, total, noun = 'row', onPrev, onNext }) {
         {total === 1 ? '' : 's'} · page {page}/{pages}
       </span>
       <div className="row">
-        <ErpButton variant="secondary" disabled={page <= 1} onClick={onPrev}>
+        <ErpButton
+          variant="secondary"
+          size="sm"
+          icon="chevron-left"
+          disabled={page <= 1}
+          onClick={onPrev}
+        >
           Prev
         </ErpButton>
-        <ErpButton variant="secondary" disabled={page >= pages} onClick={onNext}>
+        <ErpButton
+          variant="secondary"
+          size="sm"
+          iconRight="chevron-right"
+          disabled={page >= pages}
+          onClick={onNext}
+        >
           Next
         </ErpButton>
       </div>
@@ -476,13 +602,17 @@ export function ErpModal({
 }) {
   const titleId = useId();
   const dialogRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  useLayoutEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!open) return undefined;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const onKey = (e) => {
-      if (e.key === 'Escape') onClose?.();
+      if (e.key === 'Escape') onCloseRef.current?.();
     };
     window.addEventListener('keydown', onKey);
     const t = window.setTimeout(() => {
@@ -498,7 +628,7 @@ export function ErpModal({
       window.removeEventListener('keydown', onKey);
       window.clearTimeout(t);
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -516,7 +646,7 @@ export function ErpModal({
         <header className="erp-modal-header">
           <h2 id={titleId}>{title}</h2>
           <button type="button" className="erp-icon-btn" onClick={onClose} aria-label="Close">
-            Close
+            <Icon name="x" size={18} />
           </button>
         </header>
         <div className="erp-modal-body">{children}</div>
@@ -561,9 +691,13 @@ export function ErpConfirm({
   );
 }
 
-export function ErpTabs({ tabs, value, onChange }) {
+/** Tabs: each { value, label, count?, icon? }. variant: 'underline' (default) | 'segmented'. */
+export function ErpTabs({ tabs, value, onChange, variant = 'underline', className = '' }) {
   return (
-    <div className="erp-tabs" role="tablist">
+    <div
+      className={cx('erp-tabs', variant === 'segmented' && 'erp-tabs-segmented', className)}
+      role="tablist"
+    >
       {tabs.map((tab) => (
         <button
           key={tab.value}
@@ -573,7 +707,31 @@ export function ErpTabs({ tabs, value, onChange }) {
           className={`erp-tab${value === tab.value ? ' erp-tab-active' : ''}`}
           onClick={() => onChange?.(tab.value)}
         >
+          {tab.icon ? <Icon name={tab.icon} size={16} /> : null}
           {tab.label}
+          {tab.count != null && tab.count !== '' ? (
+            <span className="erp-tab-count">{tab.count}</span>
+          ) : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Segmented control: options [{ value, label, icon? }]. */
+export function ErpSegmented({ options, value, onChange, className = '', ...rest }) {
+  return (
+    <div className={cx('erp-segmented', className)} role="group" {...rest}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={value === o.value}
+          className={cx('erp-segmented-item', value === o.value && 'is-active')}
+          onClick={() => onChange?.(o.value)}
+        >
+          {o.icon ? <Icon name={o.icon} size={15} /> : null}
+          {o.label}
         </button>
       ))}
     </div>
@@ -690,15 +848,19 @@ export function ErpStickyActions({ children, className = '' }) {
 
 export function ErpDrawer({ open, title, onClose, footer, children }) {
   const titleId = useId();
+  const onCloseRef = useRef(onClose);
+  useLayoutEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => {
-      if (e.key === 'Escape') onClose?.();
+      if (e.key === 'Escape') onCloseRef.current?.();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -714,7 +876,7 @@ export function ErpDrawer({ open, title, onClose, footer, children }) {
         <header className="erp-modal-header">
           <h2 id={titleId}>{title}</h2>
           <button type="button" className="erp-icon-btn" onClick={onClose} aria-label="Close">
-            Close
+            <Icon name="x" size={18} />
           </button>
         </header>
         <div className="erp-drawer-body">{children}</div>
@@ -754,10 +916,29 @@ function sameDay(a, b) {
 /**
  * Month / week calendar. `events` items need { id, start, title, variant }.
  * `onRangeChange(from, to)` fires when the visible range changes.
+ * Optional: controlled `date` + `onDateChange`, `loading`, `emptyMessage` (shown when no events).
  */
-export function ErpCalendar({ events = [], onEventClick, onRangeChange, initialView = 'month' }) {
+export function ErpCalendar({
+  events = [],
+  onEventClick,
+  onRangeChange,
+  initialView = 'month',
+  date,
+  onDateChange,
+  loading = false,
+  emptyMessage = '',
+}) {
   const [view, setView] = useState(initialView);
-  const [cursor, setCursor] = useState(() => startOfDay(new Date()));
+  const [innerCursor, setInnerCursor] = useState(() => startOfDay(date || new Date()));
+  const cursor = date ? startOfDay(date) : innerCursor;
+  const setCursor = (next) => {
+    if (onDateChange) onDateChange(next);
+    if (!date) setInnerCursor(next);
+  };
+  const onRangeRef = useRef(onRangeChange);
+  useLayoutEffect(() => {
+    onRangeRef.current = onRangeChange;
+  });
 
   const days = useMemo(() => {
     if (view === 'week') {
@@ -767,17 +948,22 @@ export function ErpCalendar({ events = [], onEventClick, onRangeChange, initialV
     const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
     const start = mondayOf(first);
     return Array.from({ length: 42 }, (_, i) => addDays(start, i));
-  }, [view, cursor]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, cursor.getTime()]);
 
   const rangeKey = `${days[0].toISOString()}|${days[days.length - 1].toISOString()}`;
   useEffect(() => {
-    onRangeChange?.(days[0], addDays(days[days.length - 1], 1));
+    onRangeRef.current?.(days[0], addDays(days[days.length - 1], 1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rangeKey]);
 
   const move = (dir) => {
     const next = new Date(cursor);
     if (view === 'week') next.setDate(next.getDate() + dir * 7);
-    else next.setMonth(next.getMonth() + dir);
+    else {
+      next.setDate(1);
+      next.setMonth(next.getMonth() + dir);
+    }
     setCursor(next);
   };
 
@@ -794,18 +980,32 @@ export function ErpCalendar({ events = [], onEventClick, onRangeChange, initialV
     <div className={`erp-calendar${view === 'week' ? ' erp-calendar-week' : ''}`}>
       <div className="erp-calendar-head">
         <div className="row">
-          <ErpButton variant="secondary" onClick={() => move(-1)}>
-            Prev
-          </ErpButton>
-          <ErpButton variant="secondary" onClick={() => setCursor(startOfDay(new Date()))}>
+          <ErpButton variant="secondary" size="sm" onClick={() => setCursor(startOfDay(new Date()))}>
             Today
           </ErpButton>
-          <ErpButton variant="secondary" onClick={() => move(1)}>
-            Next
-          </ErpButton>
+          <ErpButton
+            variant="ghost"
+            size="sm"
+            iconOnly
+            icon="chevron-left"
+            aria-label="Previous"
+            onClick={() => move(-1)}
+          />
+          <ErpButton
+            variant="ghost"
+            size="sm"
+            iconOnly
+            icon="chevron-right"
+            aria-label="Next"
+            onClick={() => move(1)}
+          />
         </div>
-        <strong>{label}</strong>
+        <strong>
+          {label}
+          {loading ? <span className="muted"> · Loading…</span> : null}
+        </strong>
         <ErpTabs
+          variant="segmented"
           value={view}
           onChange={setView}
           tabs={[
@@ -814,7 +1014,12 @@ export function ErpCalendar({ events = [], onEventClick, onRangeChange, initialV
           ]}
         />
       </div>
-      <div className="erp-calendar-grid">
+      {emptyMessage && !loading && !events.length ? (
+        <div className="muted" role="status" style={{ padding: '0.35rem 0' }}>
+          {emptyMessage}
+        </div>
+      ) : null}
+      <div className="erp-calendar-grid" aria-busy={loading || undefined} style={loading ? { opacity: 0.6 } : undefined}>
         {DOW.map((d) => (
           <div key={d} className="erp-calendar-dow">
             {d}
@@ -853,6 +1058,7 @@ export function ErpCalendar({ events = [], onEventClick, onRangeChange, initialV
   );
 }
 
+/** Light / dark segmented switch (sun / moon). */
 export function ErpThemePicker() {
   const { mode, setMode } = useTheme();
 
@@ -863,19 +1069,268 @@ export function ErpThemePicker() {
         className={`erp-icon-btn${mode === 'light' ? ' erp-theme-btn-active' : ''}`}
         onClick={() => setMode('light')}
         aria-pressed={mode === 'light'}
-        title="Classic light mode"
+        aria-label="Light mode"
+        title="Light mode"
       >
-        Light
+        <Icon name="sun" size={16} />
       </button>
       <button
         type="button"
         className={`erp-icon-btn${mode === 'dark' ? ' erp-theme-btn-active' : ''}`}
         onClick={() => setMode('dark')}
         aria-pressed={mode === 'dark'}
-        title="Classic dark mode"
+        aria-label="Dark mode"
+        title="Dark mode"
       >
-        Dark
+        <Icon name="moon" size={16} />
       </button>
     </div>
+  );
+}
+
+/** Single icon button that toggles light / dark. */
+export function ErpThemeToggle({ className = '' }) {
+  const { isDark, toggleMode } = useTheme();
+  return (
+    <button
+      type="button"
+      className={cx('erp-icon-btn', className)}
+      onClick={toggleMode}
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={isDark ? 'Light mode' : 'Dark mode'}
+    >
+      <Icon name={isDark ? 'sun' : 'moon'} size={18} />
+    </button>
+  );
+}
+
+/* ── Display primitives ──────────────────────────────── */
+
+function avatarInitials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return ((parts[0][0] || '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}
+
+/** Avatar: image (`src`, run through mediaUrl) or initials from `name`. size: xs | sm | md | lg | xl. */
+export function ErpAvatar({ name, src, size = 'md', className = '' }) {
+  const [broken, setBroken] = useState(false);
+  const cls = cx('erp-avatar', size !== 'md' && `erp-avatar-${size}`, className);
+  if (src && !broken) {
+    return (
+      <img
+        className={cx(cls, 'erp-avatar-img')}
+        src={mediaUrl(src)}
+        alt=""
+        onError={() => setBroken(true)}
+      />
+    );
+  }
+  return (
+    <span className={cls} aria-hidden={name ? undefined : true}>
+      {avatarInitials(name)}
+    </span>
+  );
+}
+
+/**
+ * KPI tile. `label`, `value`, optional `hint`, `icon` (+ `tone`: brand|success|warning|danger|info|neutral),
+ * `delta` text with `trend` 'up' | 'down'. Pass `to` to render as a link.
+ */
+export function ErpStat({ label, value, hint, icon, tone = 'brand', delta, trend, to, className = '', children }) {
+  const body = (
+    <>
+      <div className="erp-stat-head">
+        <span className="erp-stat-label">{label}</span>
+        {icon ? (
+          <span className={cx('erp-stat-icon', tone !== 'brand' && `is-${tone}`)}>
+            <Icon name={icon} size={16} />
+          </span>
+        ) : null}
+      </div>
+      <div className="erp-stat-value">{value}</div>
+      {delta ? (
+        <span className={cx('erp-stat-delta', trend === 'up' && 'is-up', trend === 'down' && 'is-down')}>
+          {delta}
+        </span>
+      ) : null}
+      {hint ? <span className="erp-stat-hint">{hint}</span> : null}
+      {children}
+    </>
+  );
+  if (to) {
+    return (
+      <Link to={to} className={cx('erp-stat', className)}>
+        {body}
+      </Link>
+    );
+  }
+  return <div className={cx('erp-stat', className)}>{body}</div>;
+}
+
+/** Empty state: icon in a tinted circle, title, one-line help, optional action node. */
+export function ErpEmptyState({ icon = 'inbox', title, description, action, className = '' }) {
+  return (
+    <div className={cx('erp-empty-state', className)}>
+      <span className="erp-empty-state-icon">
+        <Icon name={icon} size={20} />
+      </span>
+      {title ? <p className="erp-empty-state-title">{title}</p> : null}
+      {description ? <p className="erp-empty-state-text">{description}</p> : null}
+      {action ? <div className="erp-empty-state-action">{action}</div> : null}
+    </div>
+  );
+}
+
+const BANNER_ICON = {
+  info: 'info',
+  success: 'check-circle',
+  warning: 'alert-triangle',
+  danger: 'alert-triangle',
+  neutral: 'info',
+  brand: 'sparkles',
+};
+
+/**
+ * Inline banner with left icon. variant: info | success | warning | danger | neutral | brand.
+ * Optional `title`, `actions`, `onDismiss` (shows a close button).
+ */
+export function ErpBanner({ variant = 'info', title, icon, actions, onDismiss, className = '', children }) {
+  const role = variant === 'danger' ? 'alert' : 'status';
+  return (
+    <div className={cx('erp-banner', `erp-banner-${variant}`, className)} role={role}>
+      <span className="erp-banner-icon">
+        <Icon name={icon || BANNER_ICON[variant] || 'info'} size={16} />
+      </span>
+      <div className="erp-banner-body">
+        {title ? <div className="erp-banner-title">{title}</div> : null}
+        {children ? <div className="erp-banner-text">{children}</div> : null}
+      </div>
+      {actions || onDismiss ? (
+        <div className="erp-banner-actions">
+          {actions}
+          {onDismiss ? (
+            <button type="button" className="erp-icon-btn erp-banner-close" onClick={onDismiss} aria-label="Dismiss">
+              <Icon name="x" size={16} />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function ErpSpinner({ size = 'md', className = '', label = 'Loading' }) {
+  return (
+    <span
+      className={cx('erp-spinner', size === 'sm' && 'erp-spinner-sm', size === 'lg' && 'erp-spinner-lg', className)}
+      role="status"
+      aria-label={label}
+    />
+  );
+}
+
+/** Shimmer placeholder. Pass width/height (CSS values) or `lines` for a text block. */
+export function ErpSkeleton({ width, height, lines = 0, radius, className = '' }) {
+  if (lines > 0) {
+    return (
+      <div className={cx('stack', className)} style={{ gap: '0.5rem' }} aria-hidden="true">
+        {Array.from({ length: lines }, (_, i) => (
+          <span
+            key={i}
+            className="erp-skeleton"
+            style={{ width: i === lines - 1 ? '60%' : '100%' }}
+          />
+        ))}
+      </div>
+    );
+  }
+  return (
+    <span
+      className={cx('erp-skeleton', className)}
+      style={{ width, height, borderRadius: radius }}
+      aria-hidden="true"
+    />
+  );
+}
+
+/** Centered spinner + message (page/section loading). `fullscreen` fills the viewport. */
+export function ErpLoadingState({ message = 'Loading…', fullscreen = false, className = '' }) {
+  return (
+    <div className={cx('erp-loading-state', fullscreen && 'is-fullscreen', className)} role="status">
+      <span className="erp-spinner erp-spinner-lg" aria-hidden="true" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+/** Greeting hero: serif `title` (e.g. "Good evening, Aanya"), `subtitle`, right-side `actions`. */
+export function ErpHero({ title, subtitle, actions, className = '' }) {
+  return (
+    <div className={cx('erp-hero', className)}>
+      <div>
+        <h2 className="erp-hero-title">{title}</h2>
+        {subtitle ? <p className="erp-hero-sub">{subtitle}</p> : null}
+      </div>
+      {actions ? <div className="erp-hero-actions">{actions}</div> : null}
+    </div>
+  );
+}
+
+/** "Next up" card: `eyebrow` (e.g. "Starts in 2h"), `title`, `meta` (array of {icon,text}), `actions`. */
+export function ErpNextUp({ icon = 'video', eyebrow, title, meta = [], actions, className = '' }) {
+  return (
+    <div className={cx('erp-next-up', className)}>
+      <span className="erp-next-up-icon">
+        <Icon name={icon} size={22} />
+      </span>
+      <div className="erp-next-up-body">
+        {eyebrow ? <p className="erp-next-up-eyebrow">{eyebrow}</p> : null}
+        <p className="erp-next-up-title">{title}</p>
+        {meta.length ? (
+          <p className="erp-next-up-meta">
+            {meta.filter(Boolean).map((m, i) => (
+              <span key={i}>
+                {m.icon ? <Icon name={m.icon} size={14} /> : null}
+                {m.text}
+              </span>
+            ))}
+          </p>
+        ) : null}
+      </div>
+      {actions ? <div className="erp-next-up-actions">{actions}</div> : null}
+    </div>
+  );
+}
+
+/** "Needs your attention" list. Wrap ErpAttentionItem children. */
+export function ErpAttentionList({ children, className = '' }) {
+  return <ul className={cx('erp-attention-list', className)}>{children}</ul>;
+}
+
+/** Attention row: `icon`, `tone` (warning|danger|info|success|brand|neutral), `title`, `meta`, `action`. */
+export function ErpAttentionItem({ icon = 'info', tone = 'neutral', title, meta, action, to }) {
+  const body = (
+    <>
+      <span className={cx('erp-attention-icon', tone !== 'neutral' && `is-${tone}`)}>
+        <Icon name={icon} size={16} />
+      </span>
+      <span className="erp-attention-body">
+        <span className="erp-attention-title">{title}</span>
+        {meta ? <span className="erp-attention-meta">{meta}</span> : null}
+      </span>
+    </>
+  );
+  return (
+    <li className="erp-attention-item">
+      {to ? (
+        <Link to={to} className="erp-list-hit" style={{ alignItems: 'center' }}>
+          {body}
+        </Link>
+      ) : (
+        body
+      )}
+      {action ? <span className="erp-attention-action">{action}</span> : null}
+    </li>
   );
 }

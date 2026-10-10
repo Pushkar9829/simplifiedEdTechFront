@@ -1,0 +1,120 @@
+/* Support page. Tokens only. */
+
+.sp-support {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+  grid-template-areas: 'list form';
+  gap: 1rem;
+  align-items: start;
+}
+
+.sp-support-form {
+  grid-area: form;
+  position: sticky;
+  top: calc(var(--erp-topbar-h, 56px) + 1rem);
+}
+
+.sp-support-form .field {
+  margin-bottom: 0;
+}
+
+.sp-support-list {
+  grid-area: list;
+  min-width: 0;
+}
+
+.sp-support-list .erp-card-header {
+  padding-bottom: 0.25rem;
+  border-bottom: 0;
+}
+
+.sp-ticket {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+}
+
+.sp-ticket-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sp-ticket .sp-track {
+  max-width: 30rem;
+}
+
+.sp-ticket-desc {
+  margin: 0;
+  color: var(--erp-text-secondary);
+  font-size: var(--erp-font-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sp-ticket-desc.is-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sp-ticket-more {
+  align-self: flex-start;
+  margin-top: -0.5rem;
+  font-size: var(--erp-font-sm);
+}
+
+.sp-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 0.875rem;
+  border-left: 3px solid var(--erp-accent);
+  border-radius: 0 var(--erp-radius-md) var(--erp-radius-md) 0;
+  background: var(--erp-brand-50);
+}
+
+.sp-reply-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--erp-brand-700);
+  font-size: var(--erp-font-xs);
+  font-weight: 600;
+}
+
+.sp-reply p {
+  margin: 0;
+  color: var(--erp-text-primary);
+  font-size: var(--erp-font-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1024px) {
+  .sp-support {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'form'
+      'list';
+  }
+
+  .sp-support-form {
+    position: static;
+  }
+}
+
+@media (max-width: 900px) {
+  .sp-ticket {
+    padding: 0.875rem 1rem;
+  }
+
+  .sp-ticket-head {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+}

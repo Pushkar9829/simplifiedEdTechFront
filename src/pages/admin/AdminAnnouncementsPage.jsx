@@ -1,20 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createAnnouncement, listAnnouncements, updateAnnouncement } from '../../api';
 import {
+  ErpBanner,
   ErpButton,
-  ErpCard,
-  ErpDataTable,
+  ErpInput,
+  ErpLoadingState,
   ErpModal,
   ErpPager,
   ErpPageHeader,
   ErpSearch,
   ErpSelect,
-  ErpStatusBadge,
   ErpTabs,
+  ErpTextarea,
 } from '../../components/erp';
+import { errorMessage } from '../../utils/errors';
 import { useListFilter } from '../../hooks/useListFilter';
 import { formatDate } from '../../utils/format';
 import { useCatalog } from '../../context/CatalogContext';
+import {
+  AdminCell,
+  AdminFormSection,
+  AdminListState,
+  AdminRowActions,
+  AdminStatus,
+  AdminSwitch,
+  AdminTableCard,
+  AdminToolbar,
+} from './AdminKit';
+import { titleCase } from './adminOptions';
 import { useAdminModalQuery } from './useAdminModalQuery';
 
 const emptyForm = {
@@ -59,7 +72,7 @@ function AnnouncementForm({ id, onSaved, onCancel }) {
           });
         }
       } catch (err) {
-        if (!cancelled) setError(err.message);
+        if (!cancelled) setError(errorMessage(err));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -78,57 +91,59 @@ function AnnouncementForm({ id, onSaved, onCancel }) {
       else await createAnnouncement(form);
       onSaved();
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div className="empty">Loading…</div>;
+  if (loading) return <ErpLoadingState message="Loading announcement…" />;
 
   return (
-    <form className="stack" onSubmit={onSubmit}>
-      {error && <div className="error-banner">{error}</div>}
-      <div className="field">
-        <label>Title</label>
-        <input
-          className="erp-search"
-          required
-          value={form.title}
-          onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-        />
-      </div>
-      <div className="field">
-        <label>Body</label>
-        <textarea
-          className="erp-search"
-          required
-          value={form.body}
-          onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
-        />
-      </div>
-      <div className="grid two">
+    <form className="adm-form" onSubmit={onSubmit}>
+      {error && <ErpBanner variant="danger">{error}</ErpBanner>}
+      <AdminFormSection title="Message">
+        <div className="erp-form-span">
+          <ErpInput
+            label="Title"
+            required
+            value={form.title}
+            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+          />
+        </div>
+        <div className="erp-form-span">
+          <ErpTextarea
+            label="Body"
+            required
+            rows={5}
+            value={form.body}
+            onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+          />
+        </div>
+      </AdminFormSection>
+      <AdminFormSection title="Delivery">
         <ErpSelect
           label="Audience"
           value={form.audience}
           options={options('audience')}
           onChange={(e) => setForm((f) => ({ ...f, audience: e.target.value }))}
         />
-        <label className="row" style={{ alignItems: 'center', marginTop: '1.4rem' }}>
-          <input
-            type="checkbox"
+        <div />
+        <div className="erp-form-span">
+          <AdminSwitch
+            label="Active"
+            help="Active announcements are shown to the selected audience."
             checked={form.isActive}
             onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
           />
-          Active
-        </label>
-      </div>
-      <div className="row">
-        <ErpButton type="submit" disabled={saving}>
-          {saving ? 'Saving…' : isEdit ? 'Update' : 'Publish'}
-        </ErpButton>
-        <ErpButton variant="secondary" type="button" onClick={onCancel}>
+        </div>
+      </AdminFormSection>
+      <div className="adm-form-actions">
+        <ErpButton variant="secondary" type="button" onClick={onCancel} disabled={saving}>
           Cancel
+        </ErpButton>
+        <ErpButton type="submit" loading={saving} icon={isEdit ? undefined : 'megaphone'}>
+          {isEdit ? 'Save changes' : 'Publish'}
         </ErpButton>
       </div>
     </form>
@@ -136,6 +151,7 @@ function AnnouncementForm({ id, onSaved, onCancel }) {
 }
 
 export default function AdminAnnouncementsPage() {
+  const { options } = useCatalog();
   const { isNew, editId, modalOpen, openNew, openEdit, close } = useAdminModalQuery();
   const [items, setItems] = useState([]);
   const [tab, setTab] = useState('all');
@@ -149,7 +165,7 @@ export default function AdminAnnouncementsPage() {
       const data = await listAnnouncements({ activeOnly: 'false' });
       setItems(Array.isArray(data) ? data : data?.items || []);
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -167,89 +183,111 @@ export default function AdminAnnouncementsPage() {
   const list = useListFilter(visible, (a) => [a.title, a.body, a.audience].filter(Boolean).join(' '), {
     resetKey: tab,
   });
+  const activeCount = items.filter((a) => a.isActive !== false).length;
+  const audienceLabel = (value) =>
+    options('audience').find((o) => o.value === value)?.label || titleCase(value || 'all');
 
   return (
     <div className="page stack">
-      <ErpPageHeader subtitle="Platform-wide notices shown to selected audiences." />
-      {error && <div className="error-banner">{error}</div>}
+      <ErpPageHeader
+        subtitle="Platform-wide notices shown to the audiences you choose."
+        actions={
+          <ErpButton icon="plus" onClick={openNew}>
+            Create announcement
+          </ErpButton>
+        }
+      />
+      {error && <ErpBanner variant="danger">{error}</ErpBanner>}
 
-      <div className="avail-bar">
-        <ErpTabs
-          value={tab}
-          onChange={setTab}
-          tabs={[
-            { value: 'all', label: `All (${items.length})` },
-            { value: 'active', label: 'Active' },
-            { value: 'inactive', label: 'Inactive' },
-          ]}
-        />
-        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search announcements" />
-        <div className="avail-bar-actions">
-          <ErpButton onClick={openNew}>Create announcement</ErpButton>
-        </div>
-      </div>
-
-      <ErpCard className="erp-card-flush">
-        {loading ? (
-          <div className="empty">Loading…</div>
-        ) : !visible.length ? (
-          <div className="empty">
-            No announcements.{' '}
-            <button type="button" className="erp-link" onClick={openNew}>
-              Create one
-            </button>
-          </div>
-        ) : list.noMatch ? (
-          <div className="empty">No announcements match that search.</div>
+      <AdminTableCard
+        tabs={
+          <ErpTabs
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { value: 'all', label: 'All', count: items.length || null },
+              { value: 'active', label: 'Active', count: activeCount || null },
+              { value: 'inactive', label: 'Inactive', count: items.length - activeCount || null },
+            ]}
+          />
+        }
+        toolbar={
+          <AdminToolbar
+            right={
+              !loading ? (
+                <span className="adm-result-count">
+                  {list.total} announcement{list.total === 1 ? '' : 's'}
+                </span>
+              ) : null
+            }
+          >
+            <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search announcements" />
+          </AdminToolbar>
+        }
+        footer={list.pages > 1 ? <ErpPager {...list.pagerProps} noun="announcement" /> : null}
+      >
+        {loading || !visible.length || list.noMatch ? (
+          <AdminListState
+            loading={loading}
+            empty={!visible.length}
+            noMatch={list.noMatch}
+            emptyProps={{
+              icon: 'megaphone',
+              title: items.length ? 'No announcements in this view' : 'No announcements yet',
+              description: items.length
+                ? 'Switch tabs to see the others.'
+                : 'Publish a notice to students, tutors, parents or everyone.',
+              action: items.length ? null : (
+                <ErpButton icon="plus" onClick={openNew}>
+                  Create announcement
+                </ErpButton>
+              ),
+            }}
+          />
         ) : (
           <div className="erp-table-scroll">
-            <ErpDataTable>
+            <table className="erp-data-table adm-table">
               <thead>
                 <tr>
-                  <th>Title</th>
+                  <th>Announcement</th>
                   <th>Audience</th>
                   <th>Status</th>
                   <th>Created</th>
-                  <th />
+                  <th className="adm-actions" aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
                 {list.items.map((a) => (
                   <tr key={a._id} className="erp-row-click" onClick={() => openEdit(a._id)}>
-                    <td>
-                      <strong>{a.title}</strong>
-                      {a.body && <div className="muted">{a.body}</div>}
+                    <td className="adm-primary">
+                      <AdminCell title={a.title} sub={a.body || null} />
                     </td>
-                    <td>{a.audience}</td>
-                    <td>
-                      <ErpStatusBadge status={a.isActive === false ? 'inactive' : 'active'}>
-                        {a.isActive === false ? 'inactive' : 'active'}
-                      </ErpStatusBadge>
+                    <td data-label="Audience">
+                      <span className="erp-tag">{audienceLabel(a.audience)}</span>
                     </td>
-                    <td>{formatDate(a.createdAt)}</td>
-                    <td>
-                      <ErpButton
-                        variant="secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEdit(a._id);
-                        }}
-                      >
-                        View
+                    <td data-label="Status">
+                      <AdminStatus status={a.isActive === false ? 'inactive' : 'active'} />
+                    </td>
+                    <td data-label="Created" className="muted adm-nowrap">
+                      {formatDate(a.createdAt)}
+                    </td>
+                    <AdminRowActions>
+                      <ErpButton variant="ghost" size="sm" icon="pencil" onClick={() => openEdit(a._id)}>
+                        Edit
                       </ErpButton>
-                    </td>
+                    </AdminRowActions>
                   </tr>
                 ))}
               </tbody>
-            </ErpDataTable>
+            </table>
           </div>
         )}
-        {list.total > 0 && <ErpPager {...list.pagerProps} noun="announcement" />}
-      </ErpCard>
+      </AdminTableCard>
 
       <ErpModal
         open={modalOpen}
         title={editId ? 'Edit announcement' : 'Create announcement'}
+        size="md"
         onClose={close}
       >
         <AnnouncementForm

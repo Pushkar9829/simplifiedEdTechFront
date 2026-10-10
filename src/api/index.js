@@ -55,8 +55,8 @@ export const createBooking = (body) => apiPost('/api/bookings', body);
 export const cancelBooking = (id, body = {}) => apiPost(`/api/bookings/${id}/cancel`, body);
 export const rescheduleBooking = (id, body) => apiPost(`/api/bookings/${id}/reschedule`, body);
 export const requestReschedule = (id, body = {}) => apiPost(`/api/bookings/${id}/reschedule/request`, body);
-export const offerRescheduleSlots = (id, slotIds = []) =>
-  apiPost(`/api/bookings/${id}/reschedule/offer`, { slotIds });
+export const offerRescheduleSlots = (id, slotIds = [], extra = {}) =>
+  apiPost(`/api/bookings/${id}/reschedule/offer`, { ...extra, slotIds });
 export const selectRescheduleSlot = (id, slotId) =>
   apiPost(`/api/bookings/${id}/reschedule/select`, { slotId });
 export const proposeReplacementTutor = (id, tutorUserId) =>
@@ -174,12 +174,13 @@ export const sendMessage = (bodyOrFormData) =>
 export const listMessages = (id) => apiGet(`/api/messages/${id}`);
 export const markConversationRead = (id) => apiPatch(`/api/messages/${id}/read`, {});
 
-export const listNotifications = () => apiGet('/api/notifications');
+export const listNotifications = (params = {}) => apiGet(`/api/notifications${qs(params)}`);
+export const notificationUnreadCount = () => apiGet('/api/notifications/unread-count');
 export const markNotificationRead = (id) => apiPatch(`/api/notifications/${id}/read`, {});
 export const markAllNotificationsRead = () => apiPatch('/api/notifications/read-all', {});
 
-export const listPayable = () => apiGet('/api/payments/payable');
-export const paymentHistory = () => apiGet('/api/payments/history');
+export const listPayable = (params = {}) => apiGet(`/api/payments/payable${qs(params)}`);
+export const paymentHistory = (params = {}) => apiGet(`/api/payments/history${qs(params)}`);
 export const payInvoice = (id, method = 'manual') => apiPost(`/api/payments/${id}/pay`, { method });
 export const listPlans = () => apiGet('/api/payments/plans');
 export const subscribePlan = (planId) => apiPost('/api/payments/subscribe', { planId });
@@ -230,8 +231,31 @@ export const adminUsers = (params = {}) => {
   ).toString();
   return apiGet(`/api/admin/users${q ? `?${q}` : ''}`);
 };
-export const adminSetUserStatus = (id, status) =>
-  apiPatch(`/api/admin/users/${id}/status`, { status });
+export const adminSetUserStatus = (id, status, extras = {}) =>
+  apiPatch(`/api/admin/users/${id}/status`, { status, ...extras });
+
+export const requestRefund = (id, body) => apiPost(`/api/payments/${id}/refund`, body);
+export const respondRefund = (id, body) => apiPost(`/api/payments/${id}/refund/respond`, body);
+
+export const listFavorites = (kind) => apiGet(`/api/favorites${qs(kind ? { kind } : {})}`);
+export const addFavorite = (kind, targetId) => apiPost('/api/favorites', { kind, targetId });
+export const removeFavorite = (kind, targetId) => apiDelete(`/api/favorites/${kind}/${targetId}`);
+
+export const listOpenProjects = (params = {}) => apiGet(`/api/projects/open${qs(params)}`);
+export const joinProject = (id, body = {}) => apiPost(`/api/projects/${id}/join`, body);
+
+export const listMyTickets = () => apiGet('/api/cms/tickets/mine');
+
+export const doorstepCheckIn = (id, formData) =>
+  api(`/api/bookings/${id}/doorstep`, { method: 'POST', body: formData });
+export const confirmDoorstep = (id) => apiPost(`/api/bookings/${id}/doorstep/confirm`, {});
+export const addClassHistory = (id, formData) =>
+  api(`/api/bookings/${id}/history`, { method: 'POST', body: formData });
+
+export const listMyBlocks = () => apiGet('/api/users/blocks');
+export const blockUser = (targetUserId, reason = '') =>
+  apiPost('/api/users/blocks', { targetUserId, reason });
+export const unblockUser = (id) => apiDelete(`/api/users/blocks/${id}`);
 export const pendingVerifications = (status = 'pending') =>
   apiGet(`/api/admin/tutors/verifications${qs({ status })}`);
 export const reviewVerification = (id, body) =>
@@ -282,3 +306,6 @@ export const updateResource = (id, bodyOrFormData) =>
 export const analyticsOverview = () => apiGet('/api/analytics/overview');
 export const analyticsTutors = () => apiGet('/api/analytics/tutors');
 export const analyticsTutor = (tutorId) => apiGet(`/api/analytics/tutors/${tutorId}`);
+
+export const adminGetPayment = (id) => apiGet(`/api/admin/payments/${id}`);
+export const getSubject = (id) => apiGet(`/api/subjects/${id}`);

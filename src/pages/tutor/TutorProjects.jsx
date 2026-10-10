@@ -1,41 +1,93 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { deliverProject, listProjects, setProjectStatus } from '../../api';
 import {
+  ErpAvatar,
+  ErpBanner,
   ErpButton,
   ErpCalendar,
   ErpCard,
-  ErpDataTable,
+  ErpEmptyState,
   ErpModal,
-  ErpList,
-  ErpListItem,
-  ErpOverflow,
   ErpPager,
   ErpPageHeader,
   ErpSearch,
+  ErpSegmented,
   ErpStatusBadge,
   ErpTabs,
-  useIsPhone,
+  Icon,
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
+import { errorMessage } from '../../utils/errors';
 import { formatDate, money } from '../../utils/format';
 import { titleCase } from './tutorOptions';
+import TutorRowMenu from './TutorRowMenu';
+import './tutor.css';
 
 export default function TutorProjects() {
-  const phone = useIsPhone();
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [tab, setTab] = useState('all');
   const [view, setView] = useState('list');
   const [error, setError] = useState('');
   const [deliver, setDeliver] = useState(null);
   const [files, setFiles] = useState([]);
+  const [deliverBusy, setDeliverBusy] = useState(false);
+  const [deliverError, setDeliverError] = useState('');
+  const [msg, setMsg] = useState('');
 
   const load = async () => {
     try {
       const r = await listProjects();
       setItems(Array.isArray(r) ? r : r?.items || []);
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
+    }
+  };
+
+  const startProject = async (p) => {
+    setError('');
+    try {
+      await setProjectStatus(p._id, 'in_progress');
+      setMsg('Project started');
+      load();
+    } catch (err) {
+      setError(errorMessage(err, 'Could not start the project'));
+    }
+  };
+
+  const openDeliver = (p) => {
+    setFiles([]);
+    setDeliverError('');
+    setDeliver(p);
+  };
+
+  const closeDeliver = () => {
+    if (deliverBusy) return;
+    setDeliver(null);
+    setFiles([]);
+    setDeliverError('');
+  };
+
+  const submitDeliver = async () => {
+    if (!deliver || !files.length) {
+      setDeliverError('Choose at least one file to deliver');
+      return;
+    }
+    setDeliverBusy(true);
+    setDeliverError('');
+    try {
+      const fd = new FormData();
+      files.forEach((f) => fd.append('deliverables', f));
+      await deliverProject(deliver._id, fd);
+      setDeliver(null);
+      setFiles([]);
+      setMsg('Deliverables uploaded');
+      load();
+    } catch (err) {
+      setDeliverError(errorMessage(err, 'Upload failed'));
+    } finally {
+      setDeliverBusy(false);
     }
   };
 
@@ -62,159 +114,187 @@ export default function TutorProjects() {
     [list.filtered, visible]
   );
 
+  const count = (s) => items.filter((p) => p.status === s).length;
+
   return (
-    <div className="page stack">
-      <ErpPageHeader subtitle="Charge the student a fee for project work. Students pay you — they are not paid by anyone." />
-      {error && <div className="error-banner">{error}</div>}
-      <div className="avail-bar">
-        <ErpTabs
-          value={tab}
-          onChange={setTab}
-          tabs={[
-            { value: 'all', label: `All (${items.length})` },
-            { value: 'proposed', label: 'Proposed' },
-            { value: 'in_progress', label: 'In progress' },
-            { value: 'delivered', label: 'Delivered' },
-          ]}
-        />
-        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search projects" />
-        <ErpTabs
-          value={view}
-          onChange={setView}
-          tabs={[
-            { value: 'list', label: 'List' },
-            { value: 'calendar', label: 'Calendar' },
-          ]}
-        />
-        <div className="avail-bar-actions">
+    <div className="page stack tutor-page">
+      <ErpPageHeader
+        subtitle="Charge a student a fee for project work (IA, EE, portfolio) and deliver the files here. Students pay you."
+        actions={
           <Link to="/tutor/projects/new" className="erp-btn-primary">
+            <Icon name="plus" size={16} />
             New project
           </Link>
+        }
+      />
+      {error && (
+        <ErpBanner variant="danger" onDismiss={() => setError('')}>
+          {error}
+        </ErpBanner>
+      )}
+      {msg && (
+        <ErpBanner variant="success" onDismiss={() => setMsg('')}>
+          {msg}
+        </ErpBanner>
+      )}
+      <div className="erp-filter-bar tutor-toolbar">
+        <div className="tutor-toolbar-left">
+          <ErpTabs
+            variant="segmented"
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { value: 'all', label: 'All', count: items.length },
+              { value: 'proposed', label: 'Proposed', count: count('proposed') || null },
+              { value: 'in_progress', label: 'In progress', count: count('in_progress') || null },
+              { value: 'delivered', label: 'Delivered', count: count('delivered') || null },
+            ]}
+          />
+          <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search projects or students" />
+        </div>
+        <div className="tutor-toolbar-right">
+          <ErpSegmented
+            aria-label="View"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'list', label: 'Cards', icon: 'layers' },
+              { value: 'calendar', label: 'Calendar', icon: 'calendar' },
+            ]}
+          />
         </div>
       </div>
       {view === 'calendar' ? (
         <ErpCard>
           {!events.length ? (
-            <div className="empty">No project due dates in this view.</div>
+            <ErpEmptyState icon="calendar" title="No project due dates in this view" />
           ) : (
             <ErpCalendar events={events} />
           )}
         </ErpCard>
+      ) : !visible.length ? (
+        <ErpCard>
+          <ErpEmptyState
+            icon="folder"
+            title={tab === 'all' ? 'No projects yet' : 'No projects in this view'}
+            description="Propose a project with a fee and delivery date. The student accepts and pays before you start."
+            action={
+              <Link to="/tutor/projects/new" className="erp-btn-primary">
+                New project
+              </Link>
+            }
+          />
+        </ErpCard>
+      ) : list.noMatch ? (
+        <ErpCard>
+          <ErpEmptyState icon="search" title="No projects match that search" />
+        </ErpCard>
       ) : (
-      <ErpCard className="erp-card-flush">
-        {!visible.length ? (
-          <div className="empty">No projects in this view.</div>
-        ) : list.noMatch ? (
-          <div className="empty">No projects match that search.</div>
-        ) : phone ? (
-          <div style={{ padding: '0.65rem' }}>
-            <ErpList>
-              {list.items.map((p) => (
-                <ErpListItem
-                  key={p._id}
-                  title={p.name}
-                  meta={`${p.studentUserId?.name || 'Student'} · ${money(p.price, p.currency)} · ${formatDate(p.deliveryDate)}`}
-                  status={p.status}
-                  statusLabel={titleCase(p.status)}
-                  to={`/tutor/projects/${p._id}`}
-                  actions={
-                    <ErpOverflow
-                      items={[
-                        { label: 'View', to: `/tutor/projects/${p._id}` },
-                        ['proposed', 'accepted'].includes(p.status) && {
-                          label: 'Edit',
-                          to: `/tutor/projects/${p._id}/edit`,
-                        },
-                        p.status === 'accepted' && {
-                          label: 'Start',
-                          onClick: () => setProjectStatus(p._id, 'in_progress').then(load),
-                        },
-                        ['accepted', 'in_progress', 'delivered'].includes(p.status) && {
-                          label: 'Deliver',
-                          onClick: () => setDeliver(p),
-                        },
-                      ]}
-                    />
-                  }
-                />
-              ))}
-            </ErpList>
-          </div>
-        ) : (
-          <div className="erp-table-scroll">
-            <ErpDataTable>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Student</th>
-                  <th>Fee you charge</th>
-                  <th>Delivery</th>
-                  <th>Status</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {list.items.map((p) => (
-                  <tr key={p._id}>
-                    <td>
-                      <strong>{p.name}</strong>
-                      <div className="muted">{titleCase(p.kind)}</div>
-                    </td>
-                    <td>{p.studentUserId?.name || '—'}</td>
-                    <td>{money(p.price, p.currency)}</td>
-                    <td>{formatDate(p.deliveryDate)}</td>
-                    <td>
-                      <ErpStatusBadge status={p.status}>{titleCase(p.status)}</ErpStatusBadge>
-                    </td>
-                    <td className="row">
-                      <Link to={`/tutor/projects/${p._id}`} className="erp-btn-secondary">
-                        View
-                      </Link>
-                      {['proposed', 'accepted'].includes(p.status) && (
-                        <Link to={`/tutor/projects/${p._id}/edit`} className="erp-btn-secondary">
-                          Edit
-                        </Link>
-                      )}
-                      {p.status === 'accepted' && (
-                        <ErpButton
-                          variant="secondary"
-                          onClick={() => setProjectStatus(p._id, 'in_progress').then(load)}
-                        >
+        <>
+          <div className="tutor-card-grid">
+            {list.items.map((p) => {
+              const canEdit = ['proposed', 'accepted'].includes(p.status);
+              const canDeliver = ['accepted', 'in_progress', 'delivered'].includes(p.status);
+              return (
+                <article key={p._id} className="erp-card tutor-item-card">
+                  <div className="tutor-item-body">
+                    <div className="tutor-item-top">
+                      <ErpStatusBadge status={p.status} dot>
+                        {titleCase(p.status)}
+                      </ErpStatusBadge>
+                      <TutorRowMenu
+                        label={`Actions for ${p.name}`}
+                        items={[
+                          { label: 'View', icon: 'eye', onClick: () => navigate(`/tutor/projects/${p._id}`) },
+                          canEdit && {
+                            label: 'Edit',
+                            icon: 'pencil',
+                            onClick: () => navigate(`/tutor/projects/${p._id}/edit`),
+                          },
+                        ]}
+                      />
+                    </div>
+                    <Link to={`/tutor/projects/${p._id}`} className="tutor-item-title">
+                      {p.name}
+                    </Link>
+                    <span className="tutor-cell-person text-erp-sm">
+                      <ErpAvatar name={p.studentUserId?.name || 'Student'} size="xs" />
+                      <span className="muted">{p.studentUserId?.name || 'Student'}</span>
+                    </span>
+                    <div className="tutor-chips">
+                      {p.kind ? <span className="erp-tag">{titleCase(p.kind)}</span> : null}
+                      <span className="muted text-erp-xs">
+                        <Icon name="calendar" size={12} /> Due {formatDate(p.deliveryDate)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="tutor-item-foot">
+                    <strong className="num">{money(p.price, p.currency)}</strong>
+                    <span className="tutor-item-foot-actions">
+                      {p.status === 'accepted' ? (
+                        <ErpButton size="sm" variant="secondary" onClick={() => startProject(p)}>
                           Start
                         </ErpButton>
+                      ) : null}
+                      {canDeliver ? (
+                        <ErpButton size="sm" icon="upload" onClick={() => openDeliver(p)}>
+                          Deliver
+                        </ErpButton>
+                      ) : (
+                        <Link to={`/tutor/projects/${p._id}`} className="erp-btn-ghost erp-btn-sm">
+                          View
+                        </Link>
                       )}
-                      {['accepted', 'in_progress', 'delivered'].includes(p.status) && (
-                        <ErpButton onClick={() => setDeliver(p)}>Deliver</ErpButton>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </ErpDataTable>
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
           </div>
-        )}
-        {list.total > 0 && <ErpPager {...list.pagerProps} noun="project" />}
-      </ErpCard>
+          {list.pages > 1 && (
+            <ErpCard size="sm" flush>
+              <ErpPager {...list.pagerProps} noun="project" />
+            </ErpCard>
+          )}
+        </>
       )}
-      <ErpModal open={Boolean(deliver)} title="Upload deliverables" onClose={() => setDeliver(null)}>
-        <div className="stack">
-          <input type="file" multiple onChange={(e) => setFiles(Array.from(e.target.files || []))} />
-          <div className="row">
-            <ErpButton
-              onClick={async () => {
-                const fd = new FormData();
-                files.forEach((f) => fd.append('deliverables', f));
-                await deliverProject(deliver._id, fd);
-                setDeliver(null);
-                load();
-              }}
-            >
-              Upload
-            </ErpButton>
-            <ErpButton variant="secondary" onClick={() => setDeliver(null)}>
+      <ErpModal
+        open={Boolean(deliver)}
+        title="Upload deliverables"
+        onClose={closeDeliver}
+        footer={
+          <>
+            <ErpButton variant="secondary" disabled={deliverBusy} onClick={closeDeliver}>
               Cancel
             </ErpButton>
-          </div>
+            <ErpButton icon="upload" disabled={!files.length} loading={deliverBusy} onClick={submitDeliver}>
+              {deliverBusy ? 'Uploading…' : 'Upload'}
+            </ErpButton>
+          </>
+        }
+      >
+        <div className="stack">
+          {deliverError && <ErpBanner variant="danger">{deliverError}</ErpBanner>}
+          {deliver ? (
+            <p className="muted" style={{ margin: 0 }}>
+              {deliver.name} · {deliver.studentUserId?.name || 'Student'}
+            </p>
+          ) : null}
+          <label className="erp-file-drop tutor-file-pick" htmlFor="project-deliverables">
+            <span className="row" style={{ gap: '0.5rem' }}>
+              <Icon name="upload" size={16} />
+              <span className="text-erp-sm">
+                {files.length ? files.map((f) => f.name).join(', ') : 'Choose the files to send to the student'}
+              </span>
+            </span>
+            <input
+              id="project-deliverables"
+              key={deliver?._id || 'none'}
+              type="file"
+              multiple
+              onChange={(e) => setFiles(Array.from(e.target.files || []))}
+            />
+          </label>
         </div>
       </ErpModal>
     </div>

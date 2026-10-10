@@ -14,20 +14,29 @@ import {
   updateCountry,
 } from '../../api';
 import {
+  ErpBanner,
   ErpButton,
-  ErpCard,
   ErpConfirm,
-  ErpDataTable,
+  ErpInput,
   ErpModal,
-  ErpOverflow,
   ErpPager,
   ErpPageHeader,
   ErpSearch,
   ErpSelect,
-  ErpStatusBadge,
   ErpTabs,
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
+import { errorMessage } from '../../utils/errors';
+import {
+  AdminCell,
+  AdminFormSection,
+  AdminListState,
+  AdminRowActions,
+  AdminStatus,
+  AdminSwitch,
+  AdminTableCard,
+  AdminToolbar,
+} from './AdminKit';
 
 const EMPTY_COUNTRY = {
   name: '',
@@ -54,8 +63,13 @@ export default function AdminCatalogPage() {
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [modalError, setModalError] = useState('');
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const load = async () => {
+    setLoading(true);
     try {
       const [c, b, l] = await Promise.all([
         listCountries({ includeInactive: true }),
@@ -66,7 +80,9 @@ export default function AdminCatalogPage() {
       setBoards(asList(b));
       setLevels(asList(l));
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -76,6 +92,8 @@ export default function AdminCatalogPage() {
 
   const openEditor = (row) => {
     setError('');
+    setMsg('');
+    setModalError('');
     if (tab === 'countries') {
       setForm(
         row
@@ -101,16 +119,16 @@ export default function AdminCatalogPage() {
   const save = async () => {
     if (!editing) return;
     setSaving(true);
-    setError('');
+    setModalError('');
     try {
       if (editing.kind === 'countries') {
         const body = {
           name: form.name,
-          code: form.code.toUpperCase(),
-          currency: form.currency.toUpperCase(),
+          code: String(form.code || '').toUpperCase(),
+          currency: String(form.currency || '').toUpperCase(),
           currencySymbol: form.currencySymbol,
           defaultTimezone: form.defaultTimezone || 'UTC',
-          timezones: form.timezones
+          timezones: String(form.timezones || '')
             .split(',')
             .map((t) => t.trim())
             .filter(Boolean),
@@ -131,10 +149,10 @@ export default function AdminCatalogPage() {
         else await create(body);
       }
       setEditing(null);
-      setMsg('Saved');
+      setMsg('Saved.');
       load();
     } catch (err) {
-      setError(err.message);
+      setModalError(errorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -155,52 +173,94 @@ export default function AdminCatalogPage() {
     { resetKey: tab }
   );
 
+  const noun = tab === 'countries' ? 'country' : tab === 'boards' ? 'board' : 'class level';
+  const plural = tab === 'countries' ? 'countries' : tab === 'boards' ? 'boards' : 'class levels';
+  const editingNoun =
+    editing?.kind === 'countries' ? 'country' : editing?.kind === 'boards' ? 'board' : 'class level';
+
   return (
     <div className="page stack">
-      <ErpPageHeader subtitle="Countries (currency and timezone), curriculum boards and class levels." />
-      {error && <div className="error-banner">{error}</div>}
-      {msg && <div className="success-banner">{msg}</div>}
+      <ErpPageHeader
+        subtitle="Countries (currency and timezone), curriculum boards and class levels used across sign-up and search."
+        actions={
+          <ErpButton icon="plus" onClick={() => openEditor(null)}>
+            Add {noun}
+          </ErpButton>
+        }
+      />
+      {error && <ErpBanner variant="danger">{error}</ErpBanner>}
+      {msg && (
+        <ErpBanner variant="success" onDismiss={() => setMsg('')}>
+          {msg}
+        </ErpBanner>
+      )}
 
-      <div className="avail-bar">
-        <ErpTabs
-          value={tab}
-          onChange={setTab}
-          tabs={[
-            { value: 'countries', label: `Countries (${countries.length})` },
-            { value: 'boards', label: `Boards (${boards.length})` },
-            { value: 'levels', label: `Class levels (${levels.length})` },
-          ]}
-        />
-        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search catalog" />
-        <div className="avail-bar-actions">
-          <ErpButton onClick={() => openEditor(null)}>Add</ErpButton>
-        </div>
-      </div>
-
-      <ErpCard className="erp-card-flush">
-        {!rows.length ? (
-          <div className="empty">Nothing here yet.</div>
-        ) : list.noMatch ? (
-          <div className="empty">No catalog rows match that search.</div>
+      <AdminTableCard
+        tabs={
+          <ErpTabs
+            value={tab}
+            onChange={(v) => {
+              setTab(v);
+              setMsg('');
+              setError('');
+            }}
+            tabs={[
+              { value: 'countries', label: 'Countries', icon: 'globe', count: countries.length },
+              { value: 'boards', label: 'Boards', icon: 'book-open', count: boards.length },
+              { value: 'levels', label: 'Class levels', icon: 'graduation-cap', count: levels.length },
+            ]}
+          />
+        }
+        toolbar={
+          <AdminToolbar
+            right={
+              !loading ? (
+                <span className="adm-result-count">
+                  {list.total} {list.total === 1 ? noun : plural}
+                </span>
+              ) : null
+            }
+          >
+            <ErpSearch value={list.search} onChange={list.setSearch} placeholder={`Search ${plural}`} />
+          </AdminToolbar>
+        }
+        footer={list.pages > 1 ? <ErpPager {...list.pagerProps} noun="row" /> : null}
+      >
+        {loading || !rows.length || list.noMatch ? (
+          <AdminListState
+            loading={loading}
+            empty={!rows.length}
+            noMatch={list.noMatch}
+            emptyProps={{
+              icon: tab === 'countries' ? 'globe' : tab === 'boards' ? 'book-open' : 'graduation-cap',
+              title: `No ${plural} yet`,
+              description: 'Add the first one to make it available in dropdowns.',
+              action: (
+                <ErpButton icon="plus" onClick={() => openEditor(null)}>
+                  Add {noun}
+                </ErpButton>
+              ),
+            }}
+          />
         ) : (
           <div className="erp-table-scroll">
-            <ErpDataTable>
+            <table className="erp-data-table adm-table">
               <thead>
                 {tab === 'countries' ? (
                   <tr>
                     <th>Country</th>
-                    <th>Code</th>
                     <th>Currency</th>
                     <th>Default timezone</th>
                     <th>Status</th>
-                    <th />
+                    <th className="adm-actions" aria-label="Actions" />
                   </tr>
                 ) : (
                   <tr>
                     <th>Name</th>
+                    <th>{tab === 'boards' ? 'Code' : 'Sort order'}</th>
                     <th>Country</th>
                     <th>Status</th>
-                    <th />
+                    <th className="adm-actions" aria-label="Actions" />
                   </tr>
                 )}
               </thead>
@@ -209,138 +269,178 @@ export default function AdminCatalogPage() {
                   <tr key={row._id} className="erp-row-click" onClick={() => openEditor(row)}>
                     {tab === 'countries' ? (
                       <>
-                        <td>
-                          <strong>{row.name}</strong>
+                        <td className="adm-primary">
+                          <AdminCell title={row.name} sub={row.code || null} />
                         </td>
-                        <td>{row.code}</td>
-                        <td>
-                          {row.currency} {row.currencySymbol ? `(${row.currencySymbol})` : ''}
+                        <td data-label="Currency">
+                          <span className="adm-nowrap">
+                            {row.currency} {row.currencySymbol ? <span className="muted">({row.currencySymbol})</span> : null}
+                          </span>
                         </td>
-                        <td>{row.defaultTimezone}</td>
+                        <td data-label="Default timezone">
+                          <AdminCell
+                            title={row.defaultTimezone || '—'}
+                            sub={
+                              (row.timezones || []).length > 1 ? `+${row.timezones.length - 1} more` : null
+                            }
+                          />
+                        </td>
                       </>
                     ) : (
                       <>
-                        <td>{row.name}</td>
-                        <td>{row.countryId?.name || 'All countries'}</td>
+                        <td className="adm-primary">
+                          <strong>{row.name}</strong>
+                        </td>
+                        <td data-label={tab === 'boards' ? 'Code' : 'Sort order'} className="muted">
+                          {tab === 'boards' ? row.code || '—' : row.sortOrder ?? 0}
+                        </td>
+                        <td data-label="Country">{row.countryId?.name || 'All countries'}</td>
                       </>
                     )}
-                    <td>
-                      <ErpStatusBadge status={row.isActive ? 'active' : 'inactive'}>
-                        {row.isActive ? 'active' : 'inactive'}
-                      </ErpStatusBadge>
+                    <td data-label="Status">
+                      <AdminStatus status={row.isActive ? 'active' : 'inactive'} />
                     </td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <ErpOverflow
-                        items={[
-                          { label: 'Edit', onClick: () => openEditor(row) },
-                          { label: 'Remove', danger: true, onClick: () => setPendingDelete(row) },
-                        ]}
+                    <AdminRowActions>
+                      <ErpButton variant="ghost" size="sm" icon="pencil" onClick={() => openEditor(row)}>
+                        Edit
+                      </ErpButton>
+                      <ErpButton
+                        variant="ghost"
+                        size="sm"
+                        iconOnly
+                        icon="trash"
+                        aria-label={`Remove ${row.name}`}
+                        title="Remove"
+                        onClick={() => {
+                          setMsg('');
+                          setDeleteError('');
+                          setPendingDelete(row);
+                        }}
                       />
-                    </td>
+                    </AdminRowActions>
                   </tr>
                 ))}
               </tbody>
-            </ErpDataTable>
+            </table>
           </div>
         )}
-        {list.total > 0 && <ErpPager {...list.pagerProps} noun="row" />}
-      </ErpCard>
+      </AdminTableCard>
 
       <ErpModal
         open={Boolean(editing)}
-        title={`${editing?._id ? 'Edit' : 'Add'} ${
-          editing?.kind === 'countries' ? 'country' : editing?.kind === 'boards' ? 'board' : 'class level'
-        }`}
+        title={`${editing?._id ? 'Edit' : 'Add'} ${editingNoun}`}
+        size="md"
         onClose={() => setEditing(null)}
         footer={
           <>
-            <ErpButton variant="secondary" onClick={() => setEditing(null)}>
+            <ErpButton variant="secondary" onClick={() => setEditing(null)} disabled={saving}>
               Cancel
             </ErpButton>
-            <ErpButton disabled={saving} onClick={save}>
-              {saving ? 'Saving…' : 'Save'}
+            <ErpButton loading={saving} onClick={save}>
+              {editing?._id ? 'Save changes' : `Add ${editingNoun}`}
             </ErpButton>
           </>
         }
       >
+        {modalError && <ErpBanner variant="danger">{modalError}</ErpBanner>}
         {editing?.kind === 'countries' ? (
-          <div className="erp-form-grid">
-            <div className="field">
-              <label>Name</label>
-              <input className="erp-search" value={form.name} onChange={set('name')} />
-            </div>
-            <div className="field">
-              <label>ISO code</label>
-              <input className="erp-search" value={form.code} onChange={set('code')} placeholder="IN" />
-            </div>
-            <div className="field">
-              <label>Currency (ISO 4217)</label>
-              <input className="erp-search" value={form.currency} onChange={set('currency')} placeholder="INR" />
-            </div>
-            <div className="field">
-              <label>Currency symbol</label>
-              <input className="erp-search" value={form.currencySymbol} onChange={set('currencySymbol')} />
-            </div>
-            <div className="field">
-              <label>Default timezone</label>
-              <input
-                className="erp-search"
+          <div className="adm-form">
+            <AdminFormSection title="Country">
+              <ErpInput label="Name" value={form.name} onChange={set('name')} />
+              <ErpInput label="ISO code" value={form.code} onChange={set('code')} placeholder="IN" />
+            </AdminFormSection>
+            <AdminFormSection title="Money and time">
+              <ErpInput
+                label="Currency"
+                value={form.currency}
+                onChange={set('currency')}
+                placeholder="INR"
+                helper="ISO 4217 code"
+              />
+              <ErpInput label="Currency symbol" optional value={form.currencySymbol} onChange={set('currencySymbol')} />
+              <ErpInput
+                label="Default timezone"
                 value={form.defaultTimezone}
                 onChange={set('defaultTimezone')}
                 placeholder="Asia/Kolkata"
               />
-            </div>
-            <div className="field">
-              <label>All timezones (comma separated)</label>
-              <input className="erp-search" value={form.timezones} onChange={set('timezones')} />
-            </div>
-            <label className="row">
-              <input type="checkbox" checked={Boolean(form.isActive)} onChange={set('isActive')} /> Active
-            </label>
+              <ErpInput
+                label="All timezones"
+                optional
+                value={form.timezones}
+                onChange={set('timezones')}
+                helper="Comma separated"
+              />
+              <div className="erp-form-span">
+                <AdminSwitch
+                  label="Active"
+                  help="Inactive countries are hidden from sign-up and profile forms."
+                  checked={form.isActive}
+                  onChange={set('isActive')}
+                />
+              </div>
+            </AdminFormSection>
           </div>
         ) : editing ? (
-          <div className="erp-form-grid">
-            <div className="field">
-              <label>Name</label>
-              <input className="erp-search" value={form.name} onChange={set('name')} />
-            </div>
-            {editing.kind === 'boards' ? (
-              <div className="field">
-                <label>Code</label>
-                <input className="erp-search" value={form.code} onChange={set('code')} />
+          <div className="adm-form">
+            <AdminFormSection>
+              <ErpInput label="Name" value={form.name} onChange={set('name')} />
+              {editing.kind === 'boards' ? (
+                <ErpInput label="Code" optional value={form.code} onChange={set('code')} />
+              ) : (
+                <ErpInput label="Sort order" type="number" value={form.sortOrder} onChange={set('sortOrder')} />
+              )}
+              <ErpSelect label="Country" value={form.countryId} options={countryOptions} onChange={set('countryId')} />
+              <div />
+              <div className="erp-form-span">
+                <AdminSwitch
+                  label="Active"
+                  help="Inactive rows are hidden from dropdowns."
+                  checked={form.isActive}
+                  onChange={set('isActive')}
+                />
               </div>
-            ) : (
-              <div className="field">
-                <label>Sort order</label>
-                <input className="erp-search" type="number" value={form.sortOrder} onChange={set('sortOrder')} />
-              </div>
-            )}
-            <ErpSelect label="Country" value={form.countryId} options={countryOptions} onChange={set('countryId')} />
-            <label className="row">
-              <input type="checkbox" checked={Boolean(form.isActive)} onChange={set('isActive')} /> Active
-            </label>
+            </AdminFormSection>
           </div>
         ) : null}
       </ErpModal>
 
       <ErpConfirm
         open={Boolean(pendingDelete)}
-        title="Remove catalog row"
-        message={pendingDelete ? `Remove ${pendingDelete.name}? This list is used across the app.` : ''}
+        title={`Remove ${noun}`}
+        message={
+          pendingDelete ? (
+            <>
+              Remove {pendingDelete.name}? This list is used across the app; consider marking it
+              inactive instead.
+              {deleteError ? (
+                <span className="error-banner" style={{ display: 'block', marginTop: '0.75rem' }}>
+                  {deleteError}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            ''
+          )
+        }
         confirmLabel="Remove"
         danger
+        busy={deleteBusy}
         onCancel={() => setPendingDelete(null)}
         onConfirm={async () => {
+          setDeleteBusy(true);
+          setDeleteError('');
           try {
             if (tab === 'countries') await deleteCountry(pendingDelete._id);
             else if (tab === 'boards') await deleteBoard(pendingDelete._id);
             else await deleteClassLevel(pendingDelete._id);
+            setMsg(`${pendingDelete.name} removed.`);
             setPendingDelete(null);
-            setMsg('Removed');
             load();
           } catch (err) {
-            setError(err.message);
-            setPendingDelete(null);
+            setDeleteError(errorMessage(err));
+          } finally {
+            setDeleteBusy(false);
           }
         }}
       />

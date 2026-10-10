@@ -7,8 +7,19 @@ import {
   listCurrencies,
   updateProject,
 } from '../../api';
-import { ErpSelect } from '../../components/erp';
-import { studentOptions } from './tutorOptions';
+import {
+  ErpBanner,
+  ErpButton,
+  ErpCard,
+  ErpInput,
+  ErpPageHeader,
+  ErpSelect,
+  ErpTextarea,
+  Icon,
+} from '../../components/erp';
+import { STUDENT_PICKER_QUERY, studentOptions, studentsFromBookings } from './tutorOptions';
+import { errorMessage } from '../../utils/errors';
+import './tutor.css';
 
 function asList(x) {
   return Array.isArray(x) ? x : x?.items || [];
@@ -21,6 +32,7 @@ export default function TutorProjectFormPage() {
   const [currencies, setCurrencies] = useState([]);
   const [form, setForm] = useState({
     studentUserId: '',
+    openToJoin: false,
     kind: 'project',
     name: '',
     description: '',
@@ -35,18 +47,15 @@ export default function TutorProjectFormPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [bookings, cur] = await Promise.all([listBookings(), listCurrencies()]);
-        const uniq = {};
-        (bookings.items || []).forEach((b) => {
-          if (b.studentUserId?._id) uniq[b.studentUserId._id] = b.studentUserId;
-        });
-        const list = Object.values(uniq);
+        const [bookings, cur] = await Promise.all([listBookings(STUDENT_PICKER_QUERY), listCurrencies()]);
+        const list = studentsFromBookings(bookings.items || []);
         setStudents(list);
         setCurrencies(asList(cur));
         if (id) {
           const p = await getProject(id);
           setForm({
             studentUserId: p.studentUserId?._id || p.studentUserId || '',
+            openToJoin: Boolean(p.openToJoin),
             kind: p.kind || 'project',
             name: p.name || '',
             description: p.description || '',
@@ -58,7 +67,7 @@ export default function TutorProjectFormPage() {
           setForm((f) => ({ ...f, studentUserId: list[0]?._id || '' }));
         }
       } catch (err) {
-        setError(err.message);
+        setError(errorMessage(err));
       }
     })();
   }, [id]);
@@ -75,6 +84,7 @@ export default function TutorProjectFormPage() {
           price: Number(form.price || 0),
           currency: form.currency,
           deliveryDate: new Date(form.deliveryDate).toISOString(),
+          openToJoin: form.openToJoin,
         });
       } else {
         const fd = new FormData();
@@ -86,100 +96,149 @@ export default function TutorProjectFormPage() {
       }
       navigate(id ? `/tutor/projects/${id}` : '/tutor/projects');
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     } finally {
       setSaving(false);
     }
   };
 
+  const backTo = id ? `/tutor/projects/${id}` : '/tutor/projects';
+
   return (
-    <div className="page stack">
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h1 style={{ margin: 0 }}>{id ? 'Edit project' : 'New project'}</h1>
-        <Link to={id ? `/tutor/projects/${id}` : '/tutor/projects'} className="btn secondary">
-          Back
-        </Link>
-      </div>
-      {error && <div className="error-banner">{error}</div>}
-      <form className="erp-card grid two" onSubmit={onSubmit}>
-        <ErpSelect
-          label="Student"
-          value={form.studentUserId}
-          options={studentOptions(students)}
-          disabled={Boolean(id)}
-          onChange={(e) => setForm((f) => ({ ...f, studentUserId: e.target.value }))}
-        />
-        <ErpSelect
-          label="Kind"
-          value={form.kind}
-          options={[
-            { value: 'project', label: 'Project' },
-            { value: 'assignment', label: 'Assignment' },
-          ]}
-          onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value }))}
-        />
-        <div className="field">
-          <label>Name</label>
-          <input
-            className="erp-search"
-            required
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          />
-        </div>
-        <div className="field">
-          <label>Delivery date</label>
-          <input
-            className="erp-search"
-            type="date"
-            required
-            value={form.deliveryDate}
-            onChange={(e) => setForm((f) => ({ ...f, deliveryDate: e.target.value }))}
-          />
-        </div>
-        <div className="field">
-          <label>Fee charged to student</label>
-          <input
-            className="erp-search"
-            type="number"
-            min="1"
-            step="0.01"
-            required
-            value={form.price}
-            onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
-          />
-          <div className="muted">The student or parent pays this. Students do not receive payment.</div>
-        </div>
-        <ErpSelect
-          label="Currency"
-          value={form.currency}
-          options={(currencies.length ? currencies : [{ code: 'USD' }]).map((c) => ({
-            value: c.code,
-            label: c.code,
-          }))}
-          onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
-        />
-        <div className="field" style={{ gridColumn: '1 / -1' }}>
-          <label>Description</label>
-          <textarea
-            className="erp-search"
-            value={form.description}
-            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-          />
-        </div>
-        {!id && (
-          <div className="field" style={{ gridColumn: '1 / -1' }}>
-            <label>Brief attachments</label>
-            <input type="file" multiple onChange={(e) => setFiles(Array.from(e.target.files || []))} />
+    <div className="page stack tutor-page">
+      <ErpPageHeader
+        title={id ? 'Edit project' : 'New project'}
+        subtitle="The student (or parent) pays this fee before you start."
+        actions={
+          <Link to={backTo} className="erp-btn-ghost">
+            <Icon name="arrow-left" size={16} />
+            Back
+          </Link>
+        }
+      />
+      {error && (
+        <ErpBanner variant="danger" onDismiss={() => setError('')}>
+          {error}
+        </ErpBanner>
+      )}
+      <form className="tutor-form" onSubmit={onSubmit}>
+        <ErpCard heading="Who it’s for">
+          <div className="erp-form-grid">
+            <ErpSelect
+              label="Student"
+              value={form.studentUserId}
+              options={[
+                { value: '', label: 'Open to join (no student yet)' },
+                ...studentOptions(students).filter((o) => o.value),
+              ]}
+              disabled={Boolean(id)}
+              helper={id ? 'The student cannot be changed after creating the project' : undefined}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  studentUserId: e.target.value,
+                  openToJoin: !e.target.value || f.openToJoin,
+                }))
+              }
+            />
+            <div className="field">
+              <span className="erp-label">Visibility</span>
+              <label className="erp-check tutor-check-tile">
+                <input
+                  type="checkbox"
+                  checked={!!form.openToJoin || !form.studentUserId}
+                  onChange={(e) => setForm((f) => ({ ...f, openToJoin: e.target.checked }))}
+                />
+                List on “Join projects” for any student
+              </label>
+            </div>
           </div>
-        )}
-        <div className="erp-sticky-actions" style={{ gridColumn: '1 / -1' }}>
-          <button className="btn" disabled={saving}>
-            {saving ? 'Saving…' : id ? 'Save project' : 'Create project'}
-          </button>
-          <Link to="/tutor/projects" className="btn secondary">
+        </ErpCard>
+
+        <ErpCard heading="Project details">
+          <div className="erp-form-grid">
+            <div className="erp-form-span">
+              <ErpInput
+                label="Name"
+                required
+                placeholder="e.g. Physics IA draft review"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+            <ErpSelect
+              label="Kind"
+              value={form.kind}
+              options={[
+                { value: 'project', label: 'Project' },
+                { value: 'assignment', label: 'Assignment' },
+              ]}
+              onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value }))}
+            />
+            <ErpInput
+              label="Delivery date"
+              type="date"
+              required
+              value={form.deliveryDate}
+              onChange={(e) => setForm((f) => ({ ...f, deliveryDate: e.target.value }))}
+            />
+            <div className="erp-form-span">
+              <ErpTextarea
+                label="Description"
+                optional
+                rows={4}
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              />
+            </div>
+            {!id && (
+              <div className="field erp-form-span">
+                <label className="erp-label" htmlFor="project-brief">
+                  Brief attachments <span className="erp-label-optional">(optional)</span>
+                </label>
+                <div className="erp-file-drop tutor-file-pick">
+                  <input id="project-brief" type="file" multiple onChange={(e) => setFiles(Array.from(e.target.files || []))} />
+                  <span className="muted text-erp-xs">
+                    {files.length ? files.map((f) => f.name).join(', ') : 'Task sheet, rubric, sample work'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </ErpCard>
+
+        <ErpCard heading="Fee">
+          <div className="erp-form-grid">
+            <ErpInput
+              label="Fee charged to student"
+              type="number"
+              min="1"
+              step="0.01"
+              inputMode="decimal"
+              required
+              helper="The student or parent pays this. Students do not receive payment."
+              value={form.price}
+              onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
+            />
+            <ErpSelect
+              label="Currency"
+              value={form.currency}
+              options={(currencies.length ? currencies : [{ code: 'USD' }]).map((c) => ({
+                value: c.code,
+                label: c.code,
+              }))}
+              onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
+            />
+          </div>
+        </ErpCard>
+
+        <div className="tutor-form-footer">
+          <Link to="/tutor/projects" className="erp-btn-secondary">
             Cancel
           </Link>
+          <ErpButton type="submit" loading={saving}>
+            {saving ? 'Saving…' : id ? 'Save project' : 'Create project'}
+          </ErpButton>
         </div>
       </form>
     </div>

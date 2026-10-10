@@ -1,0 +1,466 @@
+/* Tutor pages — shared + bookings helpers. Tokens only. */
+
+/* ── Shared bits ───────────────────────────────────────── */
+
+.tutor-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.tutor-chips .erp-chip,
+.tutor-cell-stack .erp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.tutor-inline-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--erp-success-text);
+  font-size: var(--erp-font-sm);
+  font-weight: 500;
+}
+
+.tutor-link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--erp-font-sm);
+  font-weight: 500;
+}
+
+.tutor-plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tutor-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  min-width: 0;
+}
+
+.tutor-file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tutor-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.625rem 0.75rem;
+  border: 1px dashed var(--erp-border-strong);
+  border-radius: var(--erp-radius-md);
+  background: var(--erp-surface-muted);
+}
+
+.tutor-upload-row input[type="file"] {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: var(--erp-font-sm);
+}
+
+.tutor-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius-md);
+  background: var(--erp-surface-muted);
+}
+
+.tutor-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.tutor-mb {
+  margin-bottom: 1rem;
+}
+
+/* ── Bookings toolbar ──────────────────────────────────── */
+
+.tutor-toolbar {
+  flex-wrap: nowrap;
+}
+
+.tutor-toolbar-left,
+.tutor-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.tutor-toolbar-left {
+  flex: 1 1 auto;
+}
+
+.tutor-toolbar-left .erp-tabs {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.tutor-toolbar-left .erp-search {
+  flex: 1 1 12rem;
+  max-width: 20rem;
+}
+
+.tutor-toolbar-right {
+  flex: 0 0 auto;
+}
+
+.tutor-toolbar-right .erp-select-wrap-inline {
+  width: 9.5rem;
+}
+
+@media (max-width: 1180px) {
+  .tutor-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .tutor-toolbar-left {
+    flex: 1 1 100%;
+  }
+
+  .tutor-toolbar-left .erp-search {
+    max-width: none;
+  }
+
+  .tutor-toolbar-right {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 640px) {
+  .tutor-toolbar-left {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tutor-toolbar-left .erp-tabs {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
+  .tutor-toolbar-right {
+    justify-content: space-between;
+  }
+
+  .tutor-toolbar-right .erp-select-wrap-inline {
+    flex: 1;
+    width: auto;
+  }
+}
+
+/* ── Bookings table / cards ────────────────────────────── */
+
+.tutor-cell-person {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.tutor-cell-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.tutor-cell-stack strong {
+  font-weight: 500;
+  color: var(--erp-text-primary);
+}
+
+.tutor-pay {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.tutor-chips .tutor-pay {
+  flex-direction: row;
+  align-items: center;
+  font-size: var(--erp-font-sm);
+}
+
+.tutor-bookings-table td {
+  vertical-align: middle;
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
+}
+
+.tutor-cell-actions {
+  width: 1%;
+  text-align: right;
+}
+
+.tutor-booking-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tutor-booking-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 0.75rem 0.75rem 0.75rem 1rem;
+  border-bottom: 1px solid var(--erp-divider);
+}
+
+.tutor-booking-card:last-child {
+  border-bottom: 0;
+}
+
+.tutor-booking-card-hit {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tutor-booking-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.tutor-booking-card-main > .muted {
+  font-size: var(--erp-font-sm);
+}
+
+.tutor-booking-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.tutor-booking-card-top strong {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Booking drawer ────────────────────────────────────── */
+
+.tutor-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+}
+
+.tutor-drawer-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.tutor-drawer-head-text > strong {
+  font-size: var(--erp-font-md);
+  font-weight: 600;
+  color: var(--erp-text-primary);
+}
+
+.tutor-drawer-head-text > .muted {
+  font-size: var(--erp-font-sm);
+}
+
+.tutor-drawer-head-text .tutor-chips {
+  margin-top: 0.25rem;
+}
+
+.tutor-drawer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.tutor-drawer-footer-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.tutor-insight-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.tutor-insight-stats > span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius-md);
+  background: var(--erp-surface-muted);
+}
+
+.tutor-prev-report {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border-left: 2px solid var(--erp-brand-100);
+  background: var(--erp-surface-muted);
+  border-radius: 0 var(--erp-radius-md) var(--erp-radius-md) 0;
+  font-size: var(--erp-font-sm);
+}
+
+.tutor-prev-report p {
+  margin: 0.25rem 0 0;
+}
+
+@media (max-width: 520px) {
+  .tutor-insight-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tutor-drawer-footer,
+  .tutor-drawer-footer-main {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .tutor-drawer-footer-main > button,
+  .tutor-drawer-footer .tutor-row-menu button {
+    width: 100%;
+  }
+
+  .tutor-drawer-footer .tutor-row-menu,
+  .tutor-drawer-footer .tutor-row-menu > span {
+    display: flex !important;
+    width: 100%;
+  }
+}
+
+/* ── Stepper (wizards, verification) ───────────────────── */
+
+.tutor-stepper {
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tutor-stepper li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--erp-font-sm);
+  font-weight: 500;
+  color: var(--erp-text-muted);
+}
+
+.tutor-stepper li + li::before {
+  content: "";
+  width: 2rem;
+  height: 1px;
+  background: var(--erp-border-strong);
+  margin-right: 0.25rem;
+}
+
+.tutor-stepper-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--erp-radius-full);
+  border: 1px solid var(--erp-border-strong);
+  font-size: var(--erp-font-xs);
+  background: var(--erp-surface);
+}
+
+.tutor-stepper li.is-active {
+  color: var(--erp-text-primary);
+}
+
+.tutor-stepper li.is-active .tutor-stepper-dot {
+  background: var(--erp-brand-600);
+  border-color: var(--erp-brand-600);
+  color: var(--erp-on-accent);
+}
+
+.tutor-stepper li.is-done .tutor-stepper-dot {
+  background: var(--erp-success-bg);
+  border-color: var(--erp-success-text);
+  color: var(--erp-success-text);
+}
+
+/* ── Reschedule slot picker ────────────────────────────── */
+
+.tutor-slot-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.tutor-slot-option {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 40px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius-md);
+  font-size: var(--erp-font-sm);
+  cursor: pointer;
+  transition:
+    border-color 150ms ease-out,
+    background-color 150ms ease-out;
+}
+
+.tutor-slot-option:hover {
+  border-color: var(--erp-border-strong);
+}
+
+.tutor-slot-option.is-on {
+  border-color: var(--erp-brand-600);
+  background: var(--erp-brand-50);
+}

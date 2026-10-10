@@ -8,16 +8,31 @@ import {
   verifyReferenceOtp,
 } from '../../api';
 import { useAuth } from '../../context/AuthContext';
-import { ErpButton, ErpCard, ErpPageHeader, ErpStatusBadge, ErpStickyActions } from '../../components/erp';
+import {
+  ErpBadge,
+  ErpBanner,
+  ErpButton,
+  ErpCard,
+  ErpConfirm,
+  ErpInput,
+  ErpLoadingState,
+  ErpPageHeader,
+  ErpStatusBadge,
+  ErpTextarea,
+  Icon,
+} from '../../components/erp';
+import { errorMessage } from '../../utils/errors';
 import { formatDate } from '../../utils/format';
 import { mediaUrl } from '../../utils/mediaUrl';
 import { titleCase, VERIFICATION_DOC_FIELDS } from './tutorOptions';
+import './tutor.css';
 
 const STATUS_COPY = {
   not_submitted:
     'Complete each step. Students cannot find you until an admin approves you.',
   pending: 'Your request is pending review. You stay hidden from search until an admin approves you.',
-  approved: 'Approved. You appear in marketplace search. You can still update documents and resubmit.',
+  approved:
+    'Approved. You appear in marketplace search. You can still update documents and resubmit — you stay listed while we review.',
   rejected: 'Your request was rejected. Fix the items below and resubmit.',
 };
 
@@ -50,6 +65,9 @@ export default function TutorVerification() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [confirmResubmit, setConfirmResubmit] = useState(false);
+  const [pendingRemove, setPendingRemove] = useState(null);
+  const [removing, setRemoving] = useState(false);
 
   const apply = (v) => {
     setVerification(v);
@@ -64,7 +82,7 @@ export default function TutorVerification() {
       apply(data.verification);
       setRequirements(data.requirements || requirements);
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -82,7 +100,7 @@ export default function TutorVerification() {
       if (successMsg) setMsg(successMsg);
       return result;
     } catch (err) {
-      setError(err.errors?.length ? err.errors.map((e) => e.message).join(', ') : err.message);
+      setError(errorMessage(err));
       return null;
     }
   };
@@ -160,294 +178,419 @@ export default function TutorVerification() {
     const fd = new FormData();
     fd.append('notes', notes);
     Object.entries(files).forEach(([key, list]) => (list || []).forEach((f) => fd.append(key, f)));
-    const v = await run(() => submitVerification(fd), 'Verification submitted. Status is now pending.');
+    const wasApproved = status === 'approved';
+    const v = await run(
+      () => submitVerification(fd),
+      wasApproved
+        ? 'Documents sent for review. You stay listed while we review.'
+        : 'Verification submitted. Status is now pending.'
+    );
     if (v) {
       apply(v);
       setFiles({});
       await refresh();
     }
+    setConfirmResubmit(false);
     setSaving(false);
+  };
+
+  const removeDoc = async () => {
+    if (!pendingRemove) return;
+    setRemoving(true);
+    await run(
+      async () => apply(await removeVerificationDocument(pendingRemove.key, pendingRemove.doc._id)),
+      'Document removed'
+    );
+    setRemoving(false);
+    setPendingRemove(null);
   };
 
   const renderDocs = (fields) =>
     fields.map(({ key, label, hint }) => {
       const docs = verification?.documents?.[key] || [];
+      const inputId = `verify-file-${key}`;
       return (
-        <div key={key} className="erp-card-sm stack">
-          <div>
-            <strong>{label}</strong>
-            <div className="muted">{hint}</div>
-            <div className="muted">Up to {requirements.maxFilesPerField} files.</div>
+        <div key={key} className="tutor-doc">
+          <div className="tutor-doc-head">
+            <span className="erp-attention-icon is-brand">
+              <Icon name={key === 'identity' ? 'user' : key === 'resume' ? 'file-text' : 'award'} size={16} />
+            </span>
+            <span className="tutor-mini-main">
+              <strong>{label}</strong>
+              <span className="muted">{hint}</span>
+            </span>
+            {docCount(key) > 0 ? (
+              <ErpBadge tone="success" icon="check">
+                {docCount(key)}
+              </ErpBadge>
+            ) : null}
           </div>
           {docs.length > 0 && (
-            <ul className="stack" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+            <ul className="erp-divided tutor-plain-list">
               {docs.map((d) => (
-                <li key={d._id} className="stack">
-                  <a href={mediaUrl(d.url)} target="_blank" rel="noreferrer">
-                    {d.name || d.url.split('/').pop()}
-                  </a>
-                  <ErpStatusBadge status={d.status}>{d.status}</ErpStatusBadge>
-                  {d.status === 'rejected' && d.rejectReason && (
-                    <span className="muted">Reason: {d.rejectReason}</span>
-                  )}
-                  {d.status !== 'approved' && (
-                    <ErpButton
-                      variant="secondary"
-                      onClick={() =>
-                        run(async () => apply(await removeVerificationDocument(key, d._id)), 'Document removed')
-                      }
-                    >
-                      Remove
-                    </ErpButton>
-                  )}
+                <li key={d._id} className="tutor-file-row">
+                  <span className="tutor-mini-main">
+                    <a className="erp-link tutor-file-link" href={mediaUrl(d.url)} target="_blank" rel="noreferrer">
+                      <Icon name="file-text" size={14} />
+                      {d.name || d.url.split('/').pop()}
+                    </a>
+                    {d.status === 'rejected' && d.rejectReason && (
+                      <span className="erp-text-danger text-erp-xs">Reason: {d.rejectReason}</span>
+                    )}
+                  </span>
+                  <span className="row" style={{ gap: '0.25rem' }}>
+                    <ErpStatusBadge status={d.status}>{d.status}</ErpStatusBadge>
+                    {d.status !== 'approved' && (
+                      <ErpButton
+                        variant="ghost"
+                        size="sm"
+                        iconOnly
+                        icon="trash"
+                        aria-label={`Remove ${d.name || 'document'}`}
+                        onClick={() => setPendingRemove({ key, doc: d })}
+                      />
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>
           )}
-          <label className="erp-file-drop">
-            <span>Tap to add files</span>
+          <label className="erp-file-drop tutor-file-pick" htmlFor={inputId}>
+            <span className="row" style={{ gap: '0.5rem' }}>
+              <Icon name="upload" size={16} />
+              <span className="text-erp-sm">
+                {files[key]?.length
+                  ? `New: ${files[key].map((f) => f.name).join(', ')}`
+                  : `Add files · up to ${requirements.maxFilesPerField}`}
+              </span>
+            </span>
             <input
+              id={inputId}
               type="file"
               multiple
               onChange={(e) => setFiles((f) => ({ ...f, [key]: Array.from(e.target.files || []) }))}
             />
           </label>
-          {files[key]?.length > 0 && (
-            <div className="muted">New: {files[key].map((f) => f.name).join(', ')}</div>
-          )}
         </div>
       );
     });
 
   if (loading) {
     return (
-      <div className="page stack">
+      <div className="page stack tutor-page">
         <ErpCard>
-          <div className="empty">Loading…</div>
+          <ErpLoadingState message="Loading verification…" />
         </ErpCard>
       </div>
     );
   }
 
+  const stepDone = [
+    verifiedCount >= requirements.minReferences && !refsDirty,
+    docCount('identity') > 0 && docCount('degree') > 0,
+    docCount('certificate') > 0 || docCount('resume') > 0,
+    status === 'pending' || status === 'approved',
+  ];
+  const stepHint = [
+    `${verifiedCount}/${requirements.minReferences} verified`,
+    'Identity and degree',
+    'Certificates, resume · optional',
+    status === 'pending' ? 'Submitted' : 'Check and submit',
+  ];
+  const bannerVariant =
+    status === 'approved' ? 'success' : status === 'rejected' ? 'danger' : status === 'pending' ? 'info' : 'warning';
+  const readyCount = checklist.filter((c) => c.ok).length;
+
   return (
-    <div className="page stack verify-form">
-      <ErpPageHeader subtitle="Four short steps. Save as you go — submit only on the last screen." />
+    <div className="page stack tutor-page verify-form">
+      <ErpPageHeader subtitle="Four short steps. Save as you go — you only submit on the last screen." />
 
-      <div
-        className={
-          status === 'approved' ? 'success-banner' : status === 'rejected' ? 'error-banner' : 'erp-card'
-        }
+      <ErpBanner
+        variant={bannerVariant}
+        icon="shield-check"
+        title={`Verification ${titleCase(status.replaceAll('_', ' ')).toLowerCase()}${
+          verification?.submittedAt ? ` · submitted ${formatDate(verification.submittedAt)}` : ''
+        }`}
       >
-        <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
-          <strong>{titleCase(status.replaceAll('_', ' '))}</strong>
-          {verification?.submittedAt && (
-            <span className="muted">Submitted {formatDate(verification.submittedAt)}</span>
-          )}
-        </div>
-        <p style={{ margin: '0.35rem 0 0' }}>{STATUS_COPY[status] || STATUS_COPY.not_submitted}</p>
+        {STATUS_COPY[status] || STATUS_COPY.not_submitted}
         {status === 'rejected' && verification?.rejectReason && (
-          <p style={{ margin: '0.35rem 0 0' }}>
+          <div>
             <strong>Reason:</strong> {verification.rejectReason}
-          </p>
-        )}
-        {verification?.adminNote && (
-          <p className="muted" style={{ margin: '0.35rem 0 0' }}>
-            Admin note: {verification.adminNote}
-          </p>
-        )}
-      </div>
-
-      <div className="erp-steps" role="list">
-        {STEPS.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className={`erp-step${step === s.id ? ' erp-step-active' : ''}`}
-            onClick={() => setStep(s.id)}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-
-      {msg && <div className="success-banner">{msg}</div>}
-      {error && <div className="error-banner">{error}</div>}
-
-      {step === 0 && (
-        <ErpCard className="stack">
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <h3 style={{ margin: 0 }}>Who can vouch for you?</h3>
-            <span className="muted">
-              {verifiedCount} of {requirements.minReferences} verified
-            </span>
           </div>
-          <p className="muted" style={{ margin: 0 }}>
-            Save the list, then send an OTP to each phone and enter the code here.
-          </p>
-          {refs.map((ref, i) => {
-            const saved = savedRefs[i];
-            const isSaved = saved && saved.phone === ref.phone && !refsDirty;
-            return (
-              <div key={i} className="erp-card-sm stack">
-                <strong>Reference {i + 1}</strong>
-                <div className="erp-form-grid">
-                  <div className="field">
-                    <label>Name</label>
-                    <input className="erp-search" value={ref.name} onChange={setRef(i, 'name')} />
-                  </div>
-                  <div className="field">
-                    <label>Relation</label>
-                    <input
-                      className="erp-search"
-                      value={ref.relation}
-                      onChange={setRef(i, 'relation')}
-                      placeholder="Principal, colleague…"
-                    />
-                  </div>
-                  <div className="field">
-                    <label>Contact number</label>
-                    <input
-                      className="erp-search"
-                      value={ref.phone}
-                      onChange={setRef(i, 'phone')}
-                      placeholder="+919876543210"
-                      disabled={saved?.otpVerified && saved.phone === ref.phone}
-                    />
-                  </div>
-                  <div className="field">
-                    <label>Email (optional)</label>
-                    <input className="erp-search" value={ref.email || ''} onChange={setRef(i, 'email')} />
-                  </div>
-                </div>
-                {saved?.otpVerified && saved.phone === ref.phone ? (
-                  <ErpStatusBadge status="approved">OTP verified</ErpStatusBadge>
-                ) : isSaved ? (
-                  <div className="erp-form-grid">
-                    <ErpButton
-                      variant="secondary"
-                      onClick={() =>
-                        run(async () => {
-                          const r = await sendReferenceOtp(i);
-                          setOtpHints((h) => ({
-                            ...h,
-                            [i]: r.demoOtp ? `Demo OTP: ${r.demoOtp}` : `OTP sent to ${r.phone}`,
-                          }));
-                        })
-                      }
-                    >
-                      Send OTP
-                    </ErpButton>
-                    <input
-                      className="erp-search"
-                      placeholder="Enter OTP"
-                      value={otpInputs[i] || ''}
-                      onChange={(e) => setOtpInputs((o) => ({ ...o, [i]: e.target.value }))}
-                    />
-                    <ErpButton
-                      disabled={!otpInputs[i]}
-                      onClick={() =>
-                        run(async () => {
-                          const v = await verifyReferenceOtp(i, otpInputs[i]);
-                          apply(v);
-                          setOtpInputs((o) => ({ ...o, [i]: '' }));
-                        }, 'Reference verified')
-                      }
-                    >
-                      Verify
-                    </ErpButton>
-                    {otpHints[i] && <span className="muted">{otpHints[i]}</span>}
-                  </div>
-                ) : (
-                  <span className="muted">Save this step to enable OTP.</span>
-                )}
-                <ErpButton
-                  variant="danger"
-                  onClick={() => setRefs((list) => list.filter((_, idx) => idx !== i))}
-                  disabled={refs.length <= 1}
+        )}
+        {verification?.adminNote && <div>Admin note: {verification.adminNote}</div>}
+      </ErpBanner>
+
+      <div className="tutor-verify">
+        <ErpCard className="tutor-verify-steps">
+          <ol className="tutor-vsteps">
+            {STEPS.map((s) => (
+              <li key={s.id}>
+                <button
+                  type="button"
+                  className={`tutor-vstep${step === s.id ? ' is-active' : ''}${stepDone[s.id] ? ' is-done' : ''}`}
+                  aria-current={step === s.id ? 'step' : undefined}
+                  onClick={() => setStep(s.id)}
                 >
-                  Remove
-                </ErpButton>
-              </div>
-            );
-          })}
-          <ErpButton
-            variant="secondary"
-            onClick={() => setRefs((list) => [...list, { ...EMPTY_REF }])}
-            disabled={refs.length >= 5}
-          >
-            Add another reference
-          </ErpButton>
-        </ErpCard>
-      )}
-
-      {step === 1 && (
-        <ErpCard className="stack">
-          <h3 style={{ margin: 0 }}>Required documents</h3>
-          <p className="muted" style={{ margin: 0 }}>
-            Identity and degree are required. You can replace rejected files here.
-          </p>
-          <div className="verify-doc-grid">{renderDocs(REQUIRED_DOCS)}</div>
-        </ErpCard>
-      )}
-
-      {step === 2 && (
-        <ErpCard className="stack">
-          <h3 style={{ margin: 0 }}>Optional documents</h3>
-          <p className="muted" style={{ margin: 0 }}>
-            Certificates and a resume help review. You can skip this step.
-          </p>
-          <div className="verify-doc-grid">{renderDocs(OPTIONAL_DOCS)}</div>
-        </ErpCard>
-      )}
-
-      {step === 3 && (
-        <ErpCard className="stack">
-          <h3 style={{ margin: 0 }}>Review and submit</h3>
-          <ul className="stack" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-            {checklist.map((item) => (
-              <li key={item.label} className="row" style={{ justifyContent: 'space-between' }}>
-                <span>{item.label}</span>
-                <ErpStatusBadge status={item.ok ? 'approved' : 'pending'}>
-                  {item.ok ? 'Ready' : 'Needed'}
-                </ErpStatusBadge>
+                  <span className="tutor-stepper-dot">
+                    {stepDone[s.id] && step !== s.id ? <Icon name="check" size={12} /> : s.id + 1}
+                  </span>
+                  <span className="tutor-mini-main">
+                    <strong>{s.label.replace(/^\d+\.\s*/, '')}</strong>
+                    <span className="muted">{stepHint[s.id]}</span>
+                  </span>
+                </button>
               </li>
             ))}
-          </ul>
-          <div className="field">
-            <label>Notes for admin</label>
-            <textarea
-              className="erp-search"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Optional context about your qualifications"
-            />
-          </div>
+          </ol>
         </ErpCard>
-      )}
 
-      <ErpStickyActions>
-        {step > 0 && (
-          <ErpButton variant="secondary" onClick={() => setStep((s) => s - 1)}>
-            Back
-          </ErpButton>
-        )}
-        {step === 0 && (
-          <ErpButton variant="secondary" onClick={saveRefs} disabled={!refsDirty && savedRefs.length > 0}>
-            Save references
-          </ErpButton>
-        )}
-        {step < 3 ? (
-          <ErpButton onClick={goNext}>Continue</ErpButton>
-        ) : (
-          <ErpButton onClick={submit} disabled={saving || refsDirty}>
-            {saving
-              ? 'Submitting…'
-              : status === 'rejected' || status === 'approved'
-                ? `Resubmit for review${pendingFileCount ? ` (${pendingFileCount} new)` : ''}`
-                : `Submit for review${pendingFileCount ? ` (${pendingFileCount} new)` : ''}`}
-          </ErpButton>
-        )}
-      </ErpStickyActions>
+        <div className="stack tutor-verify-main">
+          {msg && (
+            <ErpBanner variant="success" onDismiss={() => setMsg('')}>
+              {msg}
+            </ErpBanner>
+          )}
+          {error && (
+            <ErpBanner variant="danger" onDismiss={() => setError('')}>
+              {error}
+            </ErpBanner>
+          )}
+
+          {step === 0 && (
+            <ErpCard
+              heading="Who can vouch for you?"
+              description="Save the list, then send an OTP to each phone and enter the code here."
+              headerActions={
+                <ErpBadge tone={verifiedCount >= requirements.minReferences ? 'success' : 'neutral'}>
+                  {verifiedCount} of {requirements.minReferences} verified
+                </ErpBadge>
+              }
+            >
+              <div className="stack">
+                {refs.map((ref, i) => {
+                  const saved = savedRefs[i];
+                  const isSaved = saved && saved.phone === ref.phone && !refsDirty;
+                  const verified = saved?.otpVerified && saved.phone === ref.phone;
+                  return (
+                    <div key={i} className="tutor-ref">
+                      <div className="tutor-section-head" style={{ marginBottom: '0.75rem' }}>
+                        <strong>Reference {i + 1}</strong>
+                        <span className="row" style={{ gap: '0.25rem' }}>
+                          {verified ? (
+                            <ErpBadge tone="success" icon="check">
+                              OTP verified
+                            </ErpBadge>
+                          ) : null}
+                          <ErpButton
+                            variant="ghost"
+                            size="sm"
+                            iconOnly
+                            icon="trash"
+                            aria-label={`Remove reference ${i + 1}`}
+                            onClick={() => setRefs((list) => list.filter((_, idx) => idx !== i))}
+                            disabled={refs.length <= 1}
+                          />
+                        </span>
+                      </div>
+                      <div className="erp-form-grid">
+                        <ErpInput label="Name" value={ref.name} onChange={setRef(i, 'name')} />
+                        <ErpInput
+                          label="Relation"
+                          value={ref.relation}
+                          onChange={setRef(i, 'relation')}
+                          placeholder="Principal, colleague…"
+                        />
+                        <ErpInput
+                          label="Contact number"
+                          type="tel"
+                          value={ref.phone}
+                          onChange={setRef(i, 'phone')}
+                          placeholder="+919876543210"
+                          disabled={verified}
+                        />
+                        <ErpInput
+                          label="Email"
+                          optional
+                          type="email"
+                          value={ref.email || ''}
+                          onChange={setRef(i, 'email')}
+                        />
+                      </div>
+                      {verified ? null : isSaved ? (
+                        <div className="tutor-otp-row">
+                          <ErpButton
+                            variant="secondary"
+                            size="sm"
+                            icon="phone"
+                            onClick={() =>
+                              run(async () => {
+                                const r = await sendReferenceOtp(i);
+                                setOtpHints((h) => ({
+                                  ...h,
+                                  [i]: r.demoOtp ? `Demo OTP: ${r.demoOtp}` : `OTP sent to ${r.phone}`,
+                                }));
+                              })
+                            }
+                          >
+                            Send OTP
+                          </ErpButton>
+                          <input
+                            className="erp-input tutor-otp-input"
+                            inputMode="numeric"
+                            aria-label={`OTP for reference ${i + 1}`}
+                            placeholder="Enter OTP"
+                            value={otpInputs[i] || ''}
+                            onChange={(e) => setOtpInputs((o) => ({ ...o, [i]: e.target.value }))}
+                          />
+                          <ErpButton
+                            size="sm"
+                            disabled={!otpInputs[i]}
+                            onClick={() =>
+                              run(async () => {
+                                const v = await verifyReferenceOtp(i, otpInputs[i]);
+                                apply(v);
+                                setOtpInputs((o) => ({ ...o, [i]: '' }));
+                              }, 'Reference verified')
+                            }
+                          >
+                            Verify
+                          </ErpButton>
+                          {otpHints[i] && <span className="muted text-erp-sm">{otpHints[i]}</span>}
+                        </div>
+                      ) : (
+                        <p className="muted text-erp-sm" style={{ margin: '0.75rem 0 0' }}>
+                          Save references to enable OTP for this number.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+                <ErpButton
+                  variant="ghost"
+                  icon="plus"
+                  style={{ alignSelf: 'flex-start' }}
+                  onClick={() => setRefs((list) => [...list, { ...EMPTY_REF }])}
+                  disabled={refs.length >= 5}
+                >
+                  Add another reference
+                </ErpButton>
+              </div>
+            </ErpCard>
+          )}
+
+          {step === 1 && (
+            <ErpCard
+              heading="Required documents"
+              description="Identity and degree are required. You can replace rejected files here."
+            >
+              <div className="verify-doc-grid">{renderDocs(REQUIRED_DOCS)}</div>
+            </ErpCard>
+          )}
+
+          {step === 2 && (
+            <ErpCard
+              heading="Optional documents"
+              description="Certificates and a resume speed up review. You can skip this step."
+            >
+              <div className="verify-doc-grid">{renderDocs(OPTIONAL_DOCS)}</div>
+            </ErpCard>
+          )}
+
+          {step === 3 && (
+            <ErpCard
+              heading="Review and submit"
+              headerActions={
+                <ErpBadge tone={readyCount >= 3 ? 'success' : 'warning'}>
+                  {readyCount}/{checklist.length} ready
+                </ErpBadge>
+              }
+            >
+              <ul className="erp-divided tutor-plain-list">
+                {checklist.map((item) => (
+                  <li key={item.label} className="tutor-check-row">
+                    <span className={`erp-attention-icon ${item.ok ? 'is-success' : 'is-warning'}`}>
+                      <Icon name={item.ok ? 'check' : 'alert-triangle'} size={14} />
+                    </span>
+                    <span style={{ flex: 1 }}>{item.label}</span>
+                    <ErpStatusBadge status={item.ok ? 'approved' : 'pending'}>
+                      {item.ok ? 'Ready' : 'Needed'}
+                    </ErpStatusBadge>
+                  </li>
+                ))}
+              </ul>
+              <div style={{ marginTop: '1rem' }}>
+                <ErpTextarea
+                  label="Notes for admin"
+                  optional
+                  rows={3}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Context about your qualifications"
+                />
+              </div>
+            </ErpCard>
+          )}
+
+          <div className="tutor-form-footer">
+            <span className="tutor-form-footer-note">
+              Step {step + 1} of {STEPS.length}
+            </span>
+            {step > 0 && (
+              <ErpButton variant="secondary" icon="arrow-left" onClick={() => setStep((s) => s - 1)}>
+                Back
+              </ErpButton>
+            )}
+            {step === 0 && (
+              <ErpButton variant="secondary" onClick={saveRefs} disabled={!refsDirty && savedRefs.length > 0}>
+                Save references
+              </ErpButton>
+            )}
+            {step < 3 ? (
+              <ErpButton iconRight="arrow-right" onClick={goNext}>
+                Continue
+              </ErpButton>
+            ) : (
+              <ErpButton
+                icon="shield-check"
+                onClick={() => (status === 'approved' ? setConfirmResubmit(true) : submit())}
+                loading={saving}
+                disabled={refsDirty}
+              >
+                {saving
+                  ? 'Submitting…'
+                  : status === 'rejected' || status === 'approved'
+                    ? `Resubmit for review${pendingFileCount ? ` (${pendingFileCount} new)` : ''}`
+                    : `Submit for review${pendingFileCount ? ` (${pendingFileCount} new)` : ''}`}
+              </ErpButton>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <ErpConfirm
+        open={confirmResubmit}
+        title="Send documents for review"
+        message="Your updated documents and references go to an admin for review. You stay listed while we review, and we will tell you if anything needs fixing."
+        confirmLabel="Send for review"
+        busy={saving}
+        onCancel={() => setConfirmResubmit(false)}
+        onConfirm={submit}
+      />
+      <ErpConfirm
+        open={Boolean(pendingRemove)}
+        title="Remove document"
+        message={
+          pendingRemove
+            ? `Remove “${pendingRemove.doc.name || 'this document'}”? You will need to upload it again if it is required.`
+            : ''
+        }
+        confirmLabel="Remove"
+        danger
+        busy={removing}
+        onCancel={() => setPendingRemove(null)}
+        onConfirm={removeDoc}
+      />
     </div>
   );
 }

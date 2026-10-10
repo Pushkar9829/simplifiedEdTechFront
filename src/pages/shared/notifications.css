@@ -1,0 +1,242 @@
+/* Notifications page. Tokens only. */
+
+.sp-notif-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.sp-notif-filters .erp-tabs {
+  margin: 0;
+}
+
+.sp-notif-filters .erp-search {
+  flex: 0 1 20rem;
+}
+
+.sp-notif-card {
+  overflow: hidden;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius-lg);
+  background: var(--erp-surface);
+  box-shadow: var(--erp-shadow-card);
+}
+
+.sp-notif-card > .erp-empty-state,
+.sp-notif-card > .erp-loading-state {
+  padding: 3rem 1rem;
+}
+
+.sp-notif-group + .sp-notif-group {
+  border-top: 1px solid var(--erp-border);
+}
+
+.sp-notif-day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 0.5rem 1.25rem;
+  background: var(--erp-surface-muted);
+  border-bottom: 1px solid var(--erp-divider);
+  color: var(--erp-text-muted);
+  font-size: var(--erp-font-xs);
+  font-weight: 500;
+}
+
+.sp-notif-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sp-notif {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  transition: background-color var(--erp-motion);
+}
+
+.sp-notif + .sp-notif {
+  border-top: 1px solid var(--erp-divider);
+}
+
+.sp-notif:hover {
+  background: var(--erp-row-hover);
+}
+
+.sp-notif.is-unread {
+  background: color-mix(in srgb, var(--erp-brand-50) 45%, transparent);
+}
+
+.sp-notif.is-unread:hover {
+  background: var(--erp-brand-50);
+}
+
+.sp-notif-hit {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.875rem 0.5rem 0.875rem 1.25rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.sp-notif-hit {
+  cursor: pointer;
+}
+
+button.sp-notif-hit:focus-visible {
+  outline: none;
+  box-shadow: inset var(--erp-focus-ring);
+}
+
+.sp-notif-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.sp-notif-title {
+  font-size: var(--erp-font-base);
+  font-weight: 500;
+  color: var(--erp-text-secondary);
+}
+
+.sp-notif.is-unread .sp-notif-title {
+  font-weight: 600;
+  color: var(--erp-text-primary);
+}
+
+.sp-notif-text {
+  font-size: var(--erp-font-sm);
+  color: var(--erp-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.sp-notif-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.125rem;
+  font-size: var(--erp-font-xs);
+  color: var(--erp-text-faint);
+}
+
+.sp-notif-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--erp-brand-700);
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity var(--erp-motion);
+}
+
+.sp-notif:hover .sp-notif-open,
+.sp-notif-hit:focus-visible .sp-notif-open {
+  opacity: 1;
+}
+
+.sp-notif-side {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  min-width: 2.5rem;
+  padding: 0 1.25rem 0 0.25rem;
+}
+
+.sp-notif-side .sp-unread-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--erp-radius-full);
+  background: var(--erp-accent);
+}
+
+.sp-notif-side .sp-notif-mark {
+  position: absolute;
+  top: 50%;
+  right: 0.75rem;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--erp-motion);
+}
+
+.sp-notif:hover .sp-notif-mark,
+.sp-notif-mark:focus-visible,
+.sp-notif-mark[aria-busy='true'] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sp-notif:hover .sp-unread-dot,
+.sp-notif:focus-within .sp-unread-dot {
+  opacity: 0;
+}
+
+.sp-center-row {
+  display: flex;
+  justify-content: center;
+}
+
+@media (hover: none), (max-width: 900px) {
+  .sp-notif-open {
+    opacity: 1;
+  }
+
+  .sp-notif-side .sp-notif-mark {
+    position: static;
+    transform: none;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .sp-notif .sp-unread-dot {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 900px) {
+  .sp-notif-filters .erp-tabs,
+  .sp-notif-filters .erp-search {
+    flex: 1 1 100%;
+  }
+
+  .sp-notif-filters .erp-tabs .erp-tab {
+    flex: 1;
+  }
+
+  .sp-notif-hit {
+    padding: 0.875rem 0.25rem 0.875rem 1rem;
+  }
+
+  .sp-notif-day {
+    padding: 0.5rem 1rem;
+  }
+
+  .sp-notif-side {
+    flex-direction: column-reverse;
+    justify-content: center;
+    padding-right: 0.75rem;
+  }
+
+  .sp-notif-mark {
+    padding-inline: 0.5rem;
+    font-size: 0;
+    gap: 0;
+    min-width: 40px;
+    min-height: 40px;
+  }
+}

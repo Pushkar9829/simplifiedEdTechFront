@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { listLookups } from '../api';
+import { useAuth } from './AuthContext';
 
 const CatalogContext = createContext(null);
 
@@ -84,6 +85,33 @@ const FALLBACK = {
     { value: 'letter', label: 'Letter grade' },
     { value: 'pass_fail', label: 'Pass / fail' },
   ],
+  sex: [
+    { value: 'female', label: 'Female' },
+    { value: 'male', label: 'Male' },
+    { value: 'prefer_not', label: 'Prefer not to say' },
+  ],
+  identity_type: [
+    { value: 'aadhaar', label: 'Aadhaar' },
+    { value: 'ssn', label: 'SSN' },
+    { value: 'passport', label: 'Passport' },
+    { value: 'national_id', label: 'National ID' },
+  ],
+  meeting_provider: [
+    { value: 'zoom', label: 'Zoom' },
+    { value: 'meet', label: 'Google Meet' },
+    { value: 'teams', label: 'Microsoft Teams' },
+  ],
+  plan_kind: [
+    { value: 'single', label: 'Single class' },
+    { value: 'regular', label: 'Regular lessons' },
+    { value: 'subscription', label: 'Long-term subscription' },
+  ],
+  refund_reason: [
+    { value: 'cancelled_class', label: 'Class cancelled' },
+    { value: 'quality', label: 'Quality issue' },
+    { value: 'duplicate', label: 'Duplicate charge' },
+    { value: 'other', label: 'Other' },
+  ],
 };
 
 function toOptions(rows = []) {
@@ -96,6 +124,9 @@ export function CatalogProvider({ children }) {
   const [byGroup, setByGroup] = useState({});
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const { user } = useAuth();
+  const userKey = user?._id || user?.id || '';
 
   const reload = useCallback(async () => {
     try {
@@ -108,8 +139,9 @@ export function CatalogProvider({ children }) {
       });
       setByGroup(next);
       setGroups(data?.groups || []);
+      setFailed(false);
     } catch {
-      setByGroup({});
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -117,7 +149,14 @@ export function CatalogProvider({ children }) {
 
   useEffect(() => {
     reload();
-  }, [reload]);
+  }, [reload, userKey]);
+
+  useEffect(() => {
+    if (!failed) return undefined;
+    const onFocus = () => reload();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [failed, reload]);
 
   const options = useCallback(
     (group, extras = {}) => {

@@ -14,29 +14,49 @@ import {
 } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import {
+  ErpBadge,
+  ErpBanner,
   ErpButton,
   ErpCalendar,
   ErpCard,
   ErpConfirm,
   ErpDataTable,
+  ErpEmptyState,
+  ErpInput,
   ErpModal,
-  ErpList,
-  ErpListItem,
   ErpPager,
   ErpPageHeader,
   ErpSearch,
+  ErpSegmented,
   ErpSelect,
+  ErpSkeleton,
+  ErpStat,
   ErpTabs,
+  Icon,
   useIsPhone,
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
 import { formatInZone, money } from '../../utils/format';
 import { useCatalog } from '../../context/CatalogContext';
 import { browserTimezone, subjectOptions, timezoneOptions } from './tutorOptions';
+import { errorMessage } from '../../utils/errors';
+import './tutor.css';
 
 function asList(x) {
   return Array.isArray(x) ? x : x?.items || [];
 }
+
+function inZone(value, timeZone, opts) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  try {
+    return d.toLocaleString(undefined, { ...opts, timeZone: timeZone || undefined });
+  } catch {
+    return d.toLocaleString(undefined, opts);
+  }
+}
+
+const TIME = { hour: '2-digit', minute: '2-digit' };
 
 function emptySlot(location, timezone) {
   return {
@@ -87,6 +107,8 @@ export default function TutorAvailability() {
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [locating, setLocating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const teachingMode = profile?.teachingMode || 'both';
   const allowsOnline = teachingMode !== 'offline';
@@ -120,7 +142,7 @@ export default function TutorAvailability() {
         currency: f.currency || home?.currency || profile?.currency || 'USD',
       }));
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -137,7 +159,7 @@ export default function TutorAvailability() {
         setBoards(asList(b));
         setClassLevels(asList(l));
       })
-      .catch((err) => setError(err.message));
+      .catch((err) => setError(errorMessage(err)));
   }, [offering.countryId]);
 
   const selectedSlotCountry = countries.find((c) => c._id === slot.countryId);
@@ -197,7 +219,7 @@ export default function TutorAvailability() {
       },
       (err) => {
         setLocating(false);
-        setError(err.message || 'Could not read your location');
+        setError(errorMessage(err, 'Could not read your location'));
       }
     );
   };
@@ -205,15 +227,17 @@ export default function TutorAvailability() {
   const saveOffering = async (e) => {
     e.preventDefault();
     setError('');
+    setSaving(true);
     try {
-      const online = Number(offering.onlineRate || 0);
+      const online = allowsOnline ? Number(offering.onlineRate || 0) : 0;
+      const offline = Number(offering.offlineRate || 0) || online;
       await addOffering({
         subjectId: offering.subjectId,
         level: offering.level,
         currency: offering.currency,
-        hourlyRate: online || Number(offering.offlineRate || 0),
-        onlineRate: online,
-        offlineRate: Number(offering.offlineRate || offering.onlineRate || 0),
+        hourlyRate: online || offline,
+        ...(online > 0 ? { onlineRate: online } : {}),
+        offlineRate: offline,
         ...(offering.countryId ? { countryId: offering.countryId } : {}),
         ...(offering.boardId ? { boardId: offering.boardId } : {}),
         ...(offering.classLevelId ? { classLevelId: offering.classLevelId } : {}),
@@ -222,13 +246,16 @@ export default function TutorAvailability() {
       setModalOpen(false);
       load();
     } catch (err) {
-      setError(err.message);
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
     }
   };
 
   const saveSlot = async (e) => {
     e.preventDefault();
     setError('');
+    setSaving(true);
     try {
       await addAvailability({
         startAt: slot.startAt,
@@ -243,7 +270,9 @@ export default function TutorAvailability() {
       setModalOpen(false);
       load();
     } catch (err) {
-      setError(err.errors?.length ? err.errors.map((x) => x.message).join(', ') : err.message);
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -283,98 +312,210 @@ export default function TutorAvailability() {
   );
 
   const modeTabs = [
-    { value: 'all', label: 'All' },
+    { value: 'all', label: 'All modes' },
     ...(allowsOnline ? [{ value: 'online', label: 'Online' }] : []),
     ...(allowsOffline ? [{ value: 'offline', label: 'Offline' }] : []),
   ];
 
-  return (
-    <div className="page stack">
-      <ErpPageHeader subtitle="Subjects and prices you offer per country, then the times students can book." />
-      {msg && <div className="success-banner">{msg}</div>}
-      {error && <div className="error-banner">{error}</div>}
+  const nowMs = Date.now();
+  const openSlots = slots.filter((s) => !s.isBooked && new Date(s.endAt || s.startAt).getTime() > nowMs);
+  const bookedSlots = slots.filter((s) => s.isBooked && new Date(s.endAt || s.startAt).getTime() > nowMs);
+  const nextOpen = [...openSlots].sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0];
 
-      <div className="avail-bar">
-        <ErpTabs
-          value={tab}
-          onChange={(value) => {
-            setTab(value);
-            setModalOpen(false);
-          }}
-          tabs={[
-            { value: 'offerings', label: `Offerings (${offerings.length})` },
-            { value: 'slots', label: `Slots (${slots.length})` },
-          ]}
-        />
-        <ErpSearch
-          value={list.search}
-          onChange={list.setSearch}
-          placeholder={tab === 'offerings' ? 'Search offerings' : 'Search slots'}
-        />
-        {tab === 'slots' && (
-          <>
-            <ErpTabs
-              value={view}
-              onChange={setView}
-              tabs={[
-                { value: 'list', label: 'List' },
-                { value: 'calendar', label: 'Calendar' },
-              ]}
-            />
-            {allowsOnline && allowsOffline && (
-              <ErpTabs value={modeFilter} onChange={setModeFilter} tabs={modeTabs} />
-            )}
-          </>
-        )}
-        <div className="avail-bar-actions">
-          <ErpButton
-            onClick={() => {
-              if (tab === 'slots') {
-                const next = emptySlot(profile?.location, user?.timezone);
-                if (modeFilter === 'online' || modeFilter === 'offline') next.deliveryMode = modeFilter;
-                setSlot(next);
-              }
-              setModalOpen(true);
-            }}
-          >
+  const dayGroups = (() => {
+    const map = new Map();
+    slotList.items.forEach((s) => {
+      const key = inZone(s.startAt, s.timezone, { year: 'numeric', month: '2-digit', day: '2-digit' }) || 'unknown';
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          dow: inZone(s.startAt, s.timezone, { weekday: 'short' }),
+          day: inZone(s.startAt, s.timezone, { day: 'numeric' }),
+          label: inZone(s.startAt, s.timezone, { weekday: 'long', day: 'numeric', month: 'long' }) || 'Unknown date',
+          items: [],
+        });
+      }
+      map.get(key).items.push(s);
+    });
+    return [...map.values()];
+  })();
+
+  const openAdd = () => {
+    setSaving(false);
+    if (tab === 'slots') {
+      const next = emptySlot(profile?.location, user?.timezone);
+      if (modeFilter === 'online' || modeFilter === 'offline') next.deliveryMode = modeFilter;
+      setSlot(next);
+    }
+    setModalOpen(true);
+  };
+
+  const rateText = (o) => ({
+    online: o.onlineRate || !o.offlineRate ? money(o.onlineRate || o.hourlyRate, o.currency) : '—',
+    offline: money(o.offlineRate || o.hourlyRate, o.currency),
+  });
+
+  return (
+    <div className="page stack tutor-page">
+      <ErpPageHeader
+        subtitle="Set the subjects and prices you offer, then open the times students can book."
+        actions={
+          <ErpButton icon="plus" onClick={openAdd}>
             {tab === 'offerings' ? 'Add offering' : 'Add slot'}
           </ErpButton>
+        }
+      />
+      {msg && (
+        <ErpBanner variant="success" onDismiss={() => setMsg('')}>
+          {msg}
+        </ErpBanner>
+      )}
+      {error && (
+        <ErpBanner variant="danger" onDismiss={() => setError('')}>
+          {error}
+        </ErpBanner>
+      )}
+
+      <div className="erp-kpis">
+        <ErpStat label="Subjects offered" value={loading ? '…' : offerings.length} icon="book-open" />
+        <ErpStat
+          label="Open slots"
+          value={loading ? '…' : openSlots.length}
+          hint="Upcoming and bookable"
+          icon="calendar"
+          tone="success"
+        />
+        <ErpStat
+          label="Booked slots"
+          value={loading ? '…' : bookedSlots.length}
+          hint="Upcoming"
+          icon="check-circle"
+          tone="info"
+        />
+        <ErpStat
+          label="Next open slot"
+          value={
+            <span className="tutor-stat-text">
+              {nextOpen
+                ? new Date(nextOpen.startAt).toLocaleString(undefined, {
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : '—'}
+            </span>
+          }
+          hint={nextOpen ? (nextOpen.deliveryMode === 'offline' ? 'Offline' : 'Online') : 'Add a slot to get booked'}
+          icon="clock"
+          tone="neutral"
+        />
+      </div>
+
+      <ErpTabs
+        value={tab}
+        onChange={(value) => {
+          setTab(value);
+          setModalOpen(false);
+        }}
+        tabs={[
+          { value: 'offerings', label: 'Offerings', count: offerings.length, icon: 'book-open' },
+          { value: 'slots', label: 'Time slots', count: slots.length, icon: 'calendar' },
+        ]}
+      />
+
+      <div className="erp-filter-bar tutor-toolbar">
+        <div className="tutor-toolbar-left">
+          <ErpSearch
+            value={list.search}
+            onChange={list.setSearch}
+            placeholder={tab === 'offerings' ? 'Search subject, board or country' : 'Search time zone, place or status'}
+          />
         </div>
+        {tab === 'slots' && (
+          <div className="tutor-toolbar-right">
+            {allowsOnline && allowsOffline && (
+              <ErpSelect
+                inline
+                aria-label="Delivery mode"
+                value={modeFilter}
+                options={modeTabs}
+                onChange={(e) => setModeFilter(e.target.value)}
+              />
+            )}
+            <ErpSegmented
+              aria-label="View"
+              value={view}
+              onChange={setView}
+              options={[
+                { value: 'list', label: 'By day', icon: 'list-checks' },
+                { value: 'calendar', label: 'Calendar', icon: 'calendar' },
+              ]}
+            />
+          </div>
+        )}
       </div>
 
       {loading ? (
         <ErpCard>
-          <div className="empty">Loading…</div>
+          <ErpSkeleton lines={4} />
         </ErpCard>
       ) : tab === 'offerings' ? (
-        <ErpCard className="erp-card-flush">
+        <ErpCard flush>
           {!offerings.length ? (
-            <div className="empty">No offerings yet. Add the subjects you teach.</div>
+            <ErpEmptyState
+              icon="book-open"
+              title="No offerings yet"
+              description="Add the subjects you teach with your hourly rates so students can find you."
+              action={
+                <ErpButton icon="plus" onClick={openAdd}>
+                  Add offering
+                </ErpButton>
+              }
+            />
           ) : offeringList.noMatch ? (
-            <div className="empty">No offerings match that search.</div>
+            <ErpEmptyState icon="search" title="No offerings match that search" />
           ) : phone ? (
-            <div style={{ padding: '0.65rem' }}>
-              <ErpList>
-                {offeringList.items.map((o) => (
-                  <ErpListItem
-                    key={o._id}
-                    title={o.subjectId?.name || 'Subject'}
-                    meta={`${o.level} · ${o.countryId?.name || 'Any country'}`}
-                    actions={
-                      <ErpButton variant="danger" onClick={() => setPendingDelete({ kind: 'offering', item: o })}>
-                        Remove
-                      </ErpButton>
-                    }
-                  >
-                    <div className="muted" style={{ marginTop: '0.25rem' }}>
-                      Online {money(o.onlineRate || o.hourlyRate, o.currency)}
-                      {' · '}
-                      Offline {money(o.offlineRate || o.hourlyRate, o.currency)}
-                    </div>
-                  </ErpListItem>
-                ))}
-              </ErpList>
-            </div>
+            <ul className="tutor-booking-cards">
+              {offeringList.items.map((o) => (
+                <li key={o._id} className="tutor-booking-card">
+                  <span className="tutor-booking-card-hit" style={{ cursor: 'default' }}>
+                    <span className="erp-attention-icon is-brand">
+                      <Icon name="book-open" size={16} />
+                    </span>
+                    <span className="tutor-booking-card-main">
+                      <span className="tutor-booking-card-top">
+                        <strong>{o.subjectId?.name || 'Subject'}</strong>
+                        <ErpBadge>{o.level}</ErpBadge>
+                      </span>
+                      <span className="muted">
+                        {[o.countryId?.name || 'Any country', o.boardId?.name, o.classLevelId?.name]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </span>
+                      <span className="tutor-chips text-erp-sm">
+                        <span>
+                          Online <strong className="num">{rateText(o).online}</strong>
+                        </span>
+                        <span className="muted">·</span>
+                        <span>
+                          Offline <strong className="num">{rateText(o).offline}</strong>
+                        </span>
+                      </span>
+                    </span>
+                  </span>
+                  <ErpButton
+                    variant="ghost"
+                    size="sm"
+                    iconOnly
+                    icon="trash"
+                    aria-label={`Remove ${o.subjectId?.name || 'offering'}`}
+                    onClick={() => setPendingDelete({ kind: 'offering', item: o })}
+                  />
+                </li>
+              ))}
+            </ul>
           ) : (
             <div className="erp-table-scroll">
               <ErpDataTable>
@@ -385,9 +526,9 @@ export default function TutorAvailability() {
                     <th>Country</th>
                     <th>Board</th>
                     <th>Class</th>
-                    <th>Online / hr</th>
-                    <th>Offline / hr</th>
-                    <th />
+                    <th className="num">Online / hr</th>
+                    <th className="num">Offline / hr</th>
+                    <th aria-label="Actions" />
                   </tr>
                 </thead>
                 <tbody>
@@ -396,16 +537,23 @@ export default function TutorAvailability() {
                       <td>
                         <strong>{o.subjectId?.name || '—'}</strong>
                       </td>
-                      <td>{o.level}</td>
-                      <td>{o.countryId?.name || 'Any'}</td>
-                      <td>{o.boardId?.name || '—'}</td>
-                      <td>{o.classLevelId?.name || '—'}</td>
-                      <td>{money(o.onlineRate || o.hourlyRate, o.currency)}</td>
-                      <td>{money(o.offlineRate || o.hourlyRate, o.currency)}</td>
                       <td>
-                        <ErpButton variant="danger" onClick={() => setPendingDelete({ kind: 'offering', item: o })}>
-                          Remove
-                        </ErpButton>
+                        <ErpBadge>{o.level}</ErpBadge>
+                      </td>
+                      <td>{o.countryId?.name || <span className="muted">Any</span>}</td>
+                      <td>{o.boardId?.name || <span className="muted">—</span>}</td>
+                      <td>{o.classLevelId?.name || <span className="muted">—</span>}</td>
+                      <td className="num">{rateText(o).online}</td>
+                      <td className="num">{rateText(o).offline}</td>
+                      <td className="tutor-cell-actions">
+                        <ErpButton
+                          variant="ghost"
+                          size="sm"
+                          iconOnly
+                          icon="trash"
+                          aria-label={`Remove ${o.subjectId?.name || 'offering'}`}
+                          onClick={() => setPendingDelete({ kind: 'offering', item: o })}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -415,279 +563,335 @@ export default function TutorAvailability() {
           )}
           {offeringList.total > 0 && <ErpPager {...offeringList.pagerProps} noun="offering" />}
         </ErpCard>
-      ) : (
-        <ErpCard className="erp-card-flush">
-          {!slots.length ? (
-            <div className="empty">No slots yet. Add open times for booking.</div>
-          ) : !modeSlots.length ? (
-            <div className="empty">No {modeFilter} slots. Switch the online / offline toggle.</div>
-          ) : slotList.noMatch ? (
-            <div className="empty">No slots match that search.</div>
-          ) : view === 'calendar' ? (
-            <ErpCalendar
-              events={slotEvents}
-              onEventClick={(e) => {
-                if (e.slot && !e.slot.isBooked) setPendingDelete({ kind: 'slot', item: e.slot });
-              }}
-            />
-          ) : phone ? (
-            <div style={{ padding: '0.65rem' }}>
-              <ErpList>
-                {slotList.items.map((s) => (
-                  <ErpListItem
-                    key={s._id}
-                    title={formatInZone(s.startAt, s.timezone)}
-                    meta={`${s.timezone} · until ${formatInZone(s.endAt, s.timezone)}`}
-                    status={s.isBooked ? 'cancelled' : 'open'}
-                    statusLabel={s.isBooked ? 'booked' : 'open'}
-                    actions={
-                      !s.isBooked ? (
-                        <ErpButton variant="danger" onClick={() => setPendingDelete({ kind: 'slot', item: s })}>
-                          Remove
-                        </ErpButton>
-                      ) : null
-                    }
-                  >
-                    <div className="muted" style={{ marginTop: '0.25rem' }}>
-                      {s.deliveryMode === 'offline' ? 'Offline' : 'Online'}
-                      {s.deliveryMode === 'offline' && s.location
-                        ? ` · ${[s.location.label, s.location.area, s.location.city].filter(Boolean).join(', ')}`
-                        : ''}
-                    </div>
-                  </ErpListItem>
-                ))}
-              </ErpList>
-            </div>
-          ) : (
-            <div className="erp-table-scroll">
-              <ErpDataTable>
-                <thead>
-                  <tr>
-                    <th>Start (slot timezone)</th>
-                    <th>End</th>
-                    <th>Timezone</th>
-                    <th>Your local time</th>
-                    <th>Mode / location</th>
-                    <th>Status</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {slotList.items.map((s) => (
-                    <tr key={s._id}>
-                      <td>{formatInZone(s.startAt, s.timezone)}</td>
-                      <td>{formatInZone(s.endAt, s.timezone)}</td>
-                      <td>{s.timezone}</td>
-                      <td className="muted">{formatInZone(s.startAt)}</td>
-                      <td>
-                        <span
-                          className={`erp-chip ${
-                            s.deliveryMode === 'offline' ? 'erp-chip-offline' : 'erp-chip-online'
-                          }`}
-                        >
-                          {s.deliveryMode || 'online'}
-                        </span>
-                        {s.deliveryMode === 'offline' && s.location && (
-                          <div className="muted">
-                            {[s.location.label, s.location.area, s.location.city].filter(Boolean).join(', ')}
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        {s.isBooked ? (
-                          <span className="erp-chip erp-chip-booked">booked</span>
-                        ) : (
-                          <span className="erp-chip erp-chip-open">open</span>
-                        )}
-                      </td>
-                      <td>
-                        {!s.isBooked && (
-                          <ErpButton variant="danger" onClick={() => setPendingDelete({ kind: 'slot', item: s })}>
-                            Remove
-                          </ErpButton>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </ErpDataTable>
-            </div>
-          )}
-          {view === 'list' && slotList.total > 0 && <ErpPager {...slotList.pagerProps} noun="slot" />}
+      ) : !slots.length ? (
+        <ErpCard>
+          <ErpEmptyState
+            icon="calendar"
+            title="No time slots yet"
+            description="Open times when students can book you. Each slot becomes one bookable class."
+            action={
+              <ErpButton icon="plus" onClick={openAdd}>
+                Add slot
+              </ErpButton>
+            }
+          />
         </ErpCard>
+      ) : !modeSlots.length ? (
+        <ErpCard>
+          <ErpEmptyState
+            icon="filter"
+            title={`No ${modeFilter} slots`}
+            description="Switch the mode filter or add a slot in this mode."
+            action={
+              <ErpButton variant="secondary" onClick={() => setModeFilter('all')}>
+                Show all modes
+              </ErpButton>
+            }
+          />
+        </ErpCard>
+      ) : slotList.noMatch ? (
+        <ErpCard>
+          <ErpEmptyState icon="search" title="No slots match that search" />
+        </ErpCard>
+      ) : view === 'calendar' ? (
+        <ErpCard>
+          <p className="muted text-erp-sm" style={{ margin: '0 0 0.75rem' }}>
+            Green = open, red = booked. Click an open slot to remove it.
+          </p>
+          <ErpCalendar
+            events={slotEvents}
+            onEventClick={(e) => {
+              if (e.slot && !e.slot.isBooked) setPendingDelete({ kind: 'slot', item: e.slot });
+            }}
+          />
+        </ErpCard>
+      ) : (
+        <div className="stack">
+          {dayGroups.map((g) => (
+            <ErpCard key={g.key} flush className="tutor-day-card">
+              <div className="tutor-day-head">
+                <span className="tutor-day-date">
+                  <span className="tutor-day-dow">{g.dow || '—'}</span>
+                  <span className="tutor-day-num">{g.day}</span>
+                </span>
+                <span className="tutor-mini-main">
+                  <strong>{g.label}</strong>
+                  <span className="muted">
+                    {g.items.length} slot{g.items.length === 1 ? '' : 's'} ·{' '}
+                    {g.items.filter((s) => !s.isBooked).length} open
+                  </span>
+                </span>
+              </div>
+              <ul className="tutor-slot-list">
+                {g.items.map((s) => (
+                  <li key={s._id} className={`tutor-slot${s.isBooked ? ' is-booked' : ''}`}>
+                    <span className="tutor-slot-time erp-tabular">
+                      {inZone(s.startAt, s.timezone, TIME)} – {inZone(s.endAt, s.timezone, TIME)}
+                    </span>
+                    <span className="tutor-slot-meta">
+                      <span className={`erp-chip ${s.deliveryMode === 'offline' ? 'erp-chip-offline' : 'erp-chip-online'}`}>
+                        <Icon name={s.deliveryMode === 'offline' ? 'map-pin' : 'video'} size={12} />
+                        {s.deliveryMode === 'offline' ? 'Offline' : 'Online'}
+                      </span>
+                      <span className="muted text-erp-xs">
+                        {s.timezone}
+                        {inZone(s.startAt, s.timezone, TIME) !== inZone(s.startAt, undefined, TIME)
+                          ? ` · your time ${formatInZone(s.startAt)}`
+                          : ''}
+                        {s.deliveryMode === 'offline' && s.location
+                          ? ` · ${[s.location.label, s.location.area, s.location.city].filter(Boolean).join(', ')}`
+                          : ''}
+                      </span>
+                    </span>
+                    <span className="tutor-slot-end">
+                      {s.isBooked ? (
+                        <span className="erp-chip erp-chip-booked">Booked</span>
+                      ) : (
+                        <span className="erp-chip erp-chip-open">Open</span>
+                      )}
+                      {!s.isBooked ? (
+                        <ErpButton
+                          variant="ghost"
+                          size="sm"
+                          iconOnly
+                          icon="trash"
+                          aria-label="Remove slot"
+                          onClick={() => setPendingDelete({ kind: 'slot', item: s })}
+                        />
+                      ) : (
+                        <span className="tutor-slot-spacer" aria-hidden="true" />
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </ErpCard>
+          ))}
+          {slotList.total > 0 && (
+            <ErpCard size="sm" flush>
+              <ErpPager {...slotList.pagerProps} noun="slot" />
+            </ErpCard>
+          )}
+        </div>
       )}
 
-      <ErpModal open={modalOpen && tab === 'offerings'} title="Add offering" onClose={() => setModalOpen(false)}>
-        <form className="erp-form-grid" onSubmit={saveOffering}>
-          <ErpSelect
-            label="Country"
-            value={offering.countryId}
-            options={[
-              { value: '', label: 'Any country' },
-              ...countries.map((c) => ({ value: c._id, label: c.name })),
-            ]}
-            onChange={(e) => onOfferingCountry(e.target.value)}
-          />
-          <ErpSelect
-            label="Currency"
-            value={offering.currency}
-            options={currencyOptions}
-            onChange={(e) => setOffering((f) => ({ ...f, currency: e.target.value }))}
-          />
-          <ErpSelect
-            label="Subject"
-            value={offering.subjectId}
-            options={
-              subjects.length ? subjectOptions(subjects) : [{ value: '', label: 'No subjects', disabled: true }]
-            }
-            onChange={(e) => setOffering((f) => ({ ...f, subjectId: e.target.value }))}
-          />
-          <ErpSelect
-            label="Level"
-            value={offering.level}
-            options={LEVEL_OPTIONS}
-            onChange={(e) => setOffering((f) => ({ ...f, level: e.target.value }))}
-          />
-          <ErpSelect
-            label="Board"
-            value={offering.boardId}
-            options={[
-              { value: '', label: boards.length ? 'Any board' : 'No boards for this country' },
-              ...boards.map((x) => ({ value: x._id, label: x.name })),
-            ]}
-            onChange={(e) => setOffering((f) => ({ ...f, boardId: e.target.value }))}
-          />
-          <ErpSelect
-            label="Class"
-            value={offering.classLevelId}
-            options={[
-              { value: '', label: classLevels.length ? 'Any class' : 'No classes for this country' },
-              ...classLevels.map((x) => ({ value: x._id, label: x.name })),
-            ]}
-            onChange={(e) => setOffering((f) => ({ ...f, classLevelId: e.target.value }))}
-          />
-          {allowsOnline && (
-            <div className="field">
-              <label>Online rate per hour ({offering.currency})</label>
-              <input
-                className="erp-search"
-                type="number"
-                min="0"
-                step="0.01"
-                required
-                value={offering.onlineRate}
-                onChange={(e) => setOffering((f) => ({ ...f, onlineRate: e.target.value }))}
-              />
-            </div>
-          )}
-          {allowsOffline && (
-            <div className="field">
-              <label>Offline rate per hour ({offering.currency})</label>
-              <input
-                className="erp-search"
-                type="number"
-                min="0"
-                step="0.01"
-                required={!allowsOnline}
-                value={offering.offlineRate}
-                onChange={(e) => setOffering((f) => ({ ...f, offlineRate: e.target.value }))}
-              />
-            </div>
-          )}
-          <div className="row erp-form-span">
-            <ErpButton type="submit">Save offering</ErpButton>
-            <ErpButton variant="secondary" type="button" onClick={() => setModalOpen(false)}>
+      <ErpModal
+        open={modalOpen && tab === 'offerings'}
+        title="Add offering"
+        onClose={() => !saving && setModalOpen(false)}
+        footer={
+          <>
+            <ErpButton variant="secondary" type="button" disabled={saving} onClick={() => setModalOpen(false)}>
               Cancel
             </ErpButton>
-          </div>
+            <ErpButton type="submit" form="tutor-offering-form" loading={saving}>
+              Save offering
+            </ErpButton>
+          </>
+        }
+      >
+        <form id="tutor-offering-form" className="stack" style={{ gap: '1.25rem' }} onSubmit={saveOffering}>
+          <section className="erp-form-section">
+            <h4 className="erp-section-title">What you teach</h4>
+            <div className="erp-form-grid">
+              <ErpSelect
+                label="Subject"
+                value={offering.subjectId}
+                options={
+                  subjects.length ? subjectOptions(subjects) : [{ value: '', label: 'No subjects', disabled: true }]
+                }
+                onChange={(e) => setOffering((f) => ({ ...f, subjectId: e.target.value }))}
+              />
+              <ErpSelect
+                label="Level"
+                value={offering.level}
+                options={LEVEL_OPTIONS}
+                onChange={(e) => setOffering((f) => ({ ...f, level: e.target.value }))}
+              />
+            </div>
+          </section>
+          <section className="erp-form-section">
+            <h4 className="erp-section-title">Where</h4>
+            <div className="erp-form-grid">
+              <ErpSelect
+                label="Country"
+                value={offering.countryId}
+                options={[
+                  { value: '', label: 'Any country' },
+                  ...countries.map((c) => ({ value: c._id, label: c.name })),
+                ]}
+                onChange={(e) => onOfferingCountry(e.target.value)}
+              />
+              <ErpSelect
+                label="Board"
+                value={offering.boardId}
+                options={[
+                  { value: '', label: boards.length ? 'Any board' : 'No boards for this country' },
+                  ...boards.map((x) => ({ value: x._id, label: x.name })),
+                ]}
+                onChange={(e) => setOffering((f) => ({ ...f, boardId: e.target.value }))}
+              />
+              <ErpSelect
+                label="Class"
+                value={offering.classLevelId}
+                options={[
+                  { value: '', label: classLevels.length ? 'Any class' : 'No classes for this country' },
+                  ...classLevels.map((x) => ({ value: x._id, label: x.name })),
+                ]}
+                onChange={(e) => setOffering((f) => ({ ...f, classLevelId: e.target.value }))}
+              />
+            </div>
+          </section>
+          <section className="erp-form-section">
+            <h4 className="erp-section-title">Price per hour</h4>
+            <div className="erp-form-grid">
+              <ErpSelect
+                label="Currency"
+                value={offering.currency}
+                options={currencyOptions}
+                onChange={(e) => setOffering((f) => ({ ...f, currency: e.target.value }))}
+              />
+              {allowsOnline && (
+                <ErpInput
+                  label={`Online rate (${offering.currency})`}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  required
+                  value={offering.onlineRate}
+                  onChange={(e) => setOffering((f) => ({ ...f, onlineRate: e.target.value }))}
+                />
+              )}
+              {allowsOffline && (
+                <ErpInput
+                  label={`Offline rate (${offering.currency})`}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  required={!allowsOnline}
+                  optional={allowsOnline}
+                  helper={allowsOnline ? 'Leave empty to use the online rate' : undefined}
+                  value={offering.offlineRate}
+                  onChange={(e) => setOffering((f) => ({ ...f, offlineRate: e.target.value }))}
+                />
+              )}
+            </div>
+          </section>
         </form>
       </ErpModal>
 
-      <ErpModal open={modalOpen && tab === 'slots'} title="Add slot" onClose={() => setModalOpen(false)}>
-        <form className="erp-form-grid" onSubmit={saveSlot}>
-          <ErpSelect
-            label="Slot mode"
-            value={slot.deliveryMode}
-            options={DELIVERY_OPTIONS.filter((o) => (o.value === 'online' ? allowsOnline : allowsOffline))}
-            onChange={(e) => onSlotMode(e.target.value)}
-          />
-          <ErpSelect
-            label="Country"
-            value={slot.countryId}
-            options={[
-              { value: '', label: 'Not specified' },
-              ...countries.map((c) => ({ value: c._id, label: c.name })),
-            ]}
-            onChange={(e) => onSlotCountry(e.target.value)}
-          />
-          <div className="field">
-            <label>Start ({slot.timezone})</label>
-            <input
-              className="erp-search"
-              type="datetime-local"
-              required
-              value={slot.startAt}
-              onChange={(e) => setSlot((f) => ({ ...f, startAt: e.target.value }))}
-            />
-          </div>
-          <div className="field">
-            <label>End ({slot.timezone})</label>
-            <input
-              className="erp-search"
-              type="datetime-local"
-              required
-              value={slot.endAt}
-              onChange={(e) => setSlot((f) => ({ ...f, endAt: e.target.value }))}
-            />
-          </div>
-          <ErpSelect
-            label="Timezone"
-            value={slot.timezone}
-            options={zoneOptions}
-            onChange={(e) => setSlot((f) => ({ ...f, timezone: e.target.value }))}
-          />
-          <div className="field">
-            <label>&nbsp;</label>
-            <ErpButton variant="secondary" onClick={captureLocation} disabled={locating}>
-              {locating ? 'Locating…' : 'Use my current location'}
+      <ErpModal
+        open={modalOpen && tab === 'slots'}
+        title="Add time slot"
+        onClose={() => !saving && setModalOpen(false)}
+        footer={
+          <>
+            <ErpButton variant="secondary" type="button" disabled={saving} onClick={() => setModalOpen(false)}>
+              Cancel
             </ErpButton>
-          </div>
+            <ErpButton type="submit" form="tutor-slot-form" loading={saving}>
+              Add slot
+            </ErpButton>
+          </>
+        }
+      >
+        <form id="tutor-slot-form" className="stack" style={{ gap: '1.25rem' }} onSubmit={saveSlot}>
+          <section className="erp-form-section">
+            <h4 className="erp-section-title">When</h4>
+            <div className="erp-form-grid">
+              {allowsOnline && allowsOffline ? (
+                <div className="field erp-form-span">
+                  <span className="erp-label">Mode</span>
+                  <ErpSegmented
+                    aria-label="Slot mode"
+                    value={slot.deliveryMode}
+                    onChange={onSlotMode}
+                    options={DELIVERY_OPTIONS.filter((o) => (o.value === 'online' ? allowsOnline : allowsOffline)).map(
+                      (o) => ({ ...o, icon: o.value === 'offline' ? 'map-pin' : 'video' })
+                    )}
+                  />
+                </div>
+              ) : (
+                <ErpSelect
+                  label="Slot mode"
+                  value={slot.deliveryMode}
+                  options={DELIVERY_OPTIONS.filter((o) => (o.value === 'online' ? allowsOnline : allowsOffline))}
+                  onChange={(e) => onSlotMode(e.target.value)}
+                />
+              )}
+              <ErpInput
+                label="Start"
+                type="datetime-local"
+                required
+                value={slot.startAt}
+                onChange={(e) => setSlot((f) => ({ ...f, startAt: e.target.value }))}
+              />
+              <ErpInput
+                label="End"
+                type="datetime-local"
+                required
+                value={slot.endAt}
+                onChange={(e) => setSlot((f) => ({ ...f, endAt: e.target.value }))}
+              />
+              <ErpSelect
+                label="Country"
+                value={slot.countryId}
+                options={[
+                  { value: '', label: 'Not specified' },
+                  ...countries.map((c) => ({ value: c._id, label: c.name })),
+                ]}
+                onChange={(e) => onSlotCountry(e.target.value)}
+              />
+              <ErpSelect
+                label="Time zone"
+                helper="Start and end are read in this zone"
+                value={slot.timezone}
+                options={zoneOptions}
+                onChange={(e) => setSlot((f) => ({ ...f, timezone: e.target.value }))}
+              />
+            </div>
+          </section>
           {slot.deliveryMode === 'offline' && (
-            <>
-              <div className="field">
-                <label>Venue name</label>
-                <input
-                  className="erp-search"
+            <section className="erp-form-section">
+              <h4 className="erp-section-title">
+                Venue
+                <ErpButton variant="ghost" size="sm" icon="map-pin" onClick={captureLocation} loading={locating}>
+                  {locating ? 'Locating…' : 'Use my location'}
+                </ErpButton>
+              </h4>
+              <div className="erp-form-grid">
+                <ErpInput
+                  label="Venue name"
+                  optional
                   value={slot.location.label}
                   onChange={setLoc('label')}
                   placeholder="Learning studio, library…"
                 />
+                <ErpInput label="City" value={slot.location.city} onChange={setLoc('city')} />
+                <ErpInput label="Area" value={slot.location.area} onChange={setLoc('area')} />
+                <ErpInput label="Address" value={slot.location.address} onChange={setLoc('address')} />
+                {slot.location.lat != null && (
+                  <p className="muted text-erp-sm erp-form-span" style={{ margin: 0 }}>
+                    Coordinates: {Number(slot.location.lat).toFixed(4)}, {Number(slot.location.lng).toFixed(4)}
+                  </p>
+                )}
               </div>
-              <div className="field">
-                <label>City</label>
-                <input className="erp-search" value={slot.location.city} onChange={setLoc('city')} />
-              </div>
-              <div className="field">
-                <label>Area</label>
-                <input className="erp-search" value={slot.location.area} onChange={setLoc('area')} />
-              </div>
-              <div className="field">
-                <label>Address</label>
-                <input className="erp-search" value={slot.location.address} onChange={setLoc('address')} />
-              </div>
-              {slot.location.lat != null && (
-                <div className="muted erp-form-span">
-                  Coordinates: {Number(slot.location.lat).toFixed(4)}, {Number(slot.location.lng).toFixed(4)}
-                </div>
-              )}
-            </>
+            </section>
           )}
-          <div className="row erp-form-span">
-            <ErpButton type="submit">Add slot</ErpButton>
-            <ErpButton variant="secondary" type="button" onClick={() => setModalOpen(false)}>
-              Cancel
+          {slot.deliveryMode !== 'offline' && (
+            <ErpButton
+              variant="ghost"
+              size="sm"
+              icon="globe"
+              style={{ alignSelf: 'flex-start' }}
+              onClick={captureLocation}
+              loading={locating}
+            >
+              {locating ? 'Locating…' : 'Set time zone from my device'}
             </ErpButton>
-          </div>
+          )}
         </form>
       </ErpModal>
 
@@ -703,16 +907,21 @@ export default function TutorAvailability() {
         }
         confirmLabel="Remove"
         danger
-        onCancel={() => setPendingDelete(null)}
+        busy={deleting}
+        onCancel={() => !deleting && setPendingDelete(null)}
         onConfirm={async () => {
+          setDeleting(true);
           try {
             if (pendingDelete.kind === 'offering') await deleteOffering(pendingDelete.item._id);
             else await deleteAvailability(pendingDelete.item._id);
+            setMsg(pendingDelete.kind === 'offering' ? 'Offering removed' : 'Slot removed');
             setPendingDelete(null);
             load();
           } catch (err) {
-            setError(err.message);
+            setError(errorMessage(err));
             setPendingDelete(null);
+          } finally {
+            setDeleting(false);
           }
         }}
       />

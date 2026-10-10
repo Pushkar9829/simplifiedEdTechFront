@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   cancelBooking,
@@ -9,55 +9,102 @@ import {
   listScheduleChanges,
   proposeReplacementTutor,
   requestReschedule,
+  rescheduleEntitlement,
   searchTutors,
   selectRescheduleSlot,
   sendBookingFeedback,
+  confirmDoorstep,
 } from '../../api';
 import ClassToolsModal from '../../components/ClassToolsModal';
 import {
+  ErpBadge,
+  ErpBanner,
   ErpButton,
   ErpCalendar,
   ErpCard,
   ErpConfirm,
+  ErpEmptyState,
+  ErpLoadingState,
   ErpModal,
   ErpOverflow,
   ErpPager,
   ErpPageHeader,
   ErpSearch,
+  ErpSegmented,
   ErpSelect,
+  ErpSkeleton,
   ErpStatusBadge,
   ErpTabs,
+  ErpTextarea,
+  Icon,
 } from '../../components/erp';
-import { useListFilter } from '../../hooks/useListFilter';
-import { countryLine, formatInZone, tutorRef } from '../../utils/format';
+import { countryLine, money, tutorRef } from '../../utils/format';
+import { errorMessage } from '../../utils/errors';
 import { useCatalog } from '../../context/CatalogContext';
-import { slotOptions, titleCase } from './studentOptions';
+import { useAuth } from '../../context/AuthContext';
+import { childLabel, useParentChild } from '../../context/ParentChildContext';
+import { titleCase } from './studentOptions';
+import { formatDay, formatWhen, idOf, timeUntil, viewerZone } from './studentTime';
+import { DateTile, LinkButton } from './studentUi';
+import './student.css';
 
-function canChangeBooking(b) {
-  return Boolean(b && b.status !== 'cancelled' && b.status !== 'completed');
-}
+const PAGE_SIZE = 20;
+// Classes that started within this window still count as "upcoming" so a live class stays reachable.
+const LIVE_GRACE_MS = 2 * 60 * 60 * 1000;
+const OPEN_CHANGE = ['pending', 'slots_offered', 'awaiting_replacement', 'awaiting_approval'];
 
-function hoursUntil(startAt) {
-  return (new Date(startAt).getTime() - Date.now()) / 3600000;
-}
+const PAYMENT_LABEL = {
+  pending: 'Unpaid',
+  failed: 'Payment failed',
+  awaiting_confirmation: 'Awaiting confirmation',
+  paid: 'Paid',
+  cancelled: 'Invoice cancelled',
+  refunded: 'Refunded',
+};
+
+const isActive = (b) => Boolean(b && b.status !== 'cancelled' && b.status !== 'completed');
+const hasStarted = (b) => new Date(b.startAt).getTime() <= Date.now();
+const hasEnded = (b) => new Date(b.endAt || b.startAt).getTime() <= Date.now();
+const hoursUntil = (startAt) => (new Date(startAt).getTime() - Date.now()) / 3600000;
+const needsPayment = (b) => ['pending', 'failed'].includes(b.payment?.status) && b.status !== 'cancelled';
 
 function canFeedback(b) {
-  return Boolean(
-    b && b.status !== 'cancelled' && (b.status === 'completed' || new Date(b.endAt) <= new Date())
-  );
+  return Boolean(b && b.status !== 'cancelled' && !b.consumed && (b.status === 'completed' || hasEnded(b)));
 }
 
 function placeLine(loc = {}) {
-  return [loc.label, loc.area, loc.city, loc.state, loc.address].filter(Boolean).join(', ') || 'See tutor profile';
+  return (
+    [loc.label, loc.line1, loc.area, loc.city, loc.state, loc.postalCode, loc.address].filter(Boolean).join(', ') ||
+    'See tutor profile'
+  );
+}
+
+function tabQuery(tab) {
+  const boundary = new Date(Date.now() - LIVE_GRACE_MS).toISOString();
+  if (tab === 'upcoming') return { from: boundary, sort: 'startAt', excludeStatus: 'cancelled' };
+  if (tab === 'completed') return { to: boundary, sort: '-startAt' };
+  return { sort: '-startAt' };
 }
 
 export default function StudentBookings() {
   const location = useLocation();
   const isParent = location.pathname.startsWith('/parent');
-  const findPath = isParent ? '/parent/tutors' : '/student/tutors';
+  const base = isParent ? '/parent' : '/student';
+  const findPath = `${base}/tutors`;
+  const policyPath = `${base}/policy`;
+  const paymentsPath = `${base}/payments`;
   const { options } = useCatalog();
-  const policyPath = isParent ? '/parent/policy' : '/student/policy';
+  const { user } = useAuth();
+  const zone = viewerZone(user);
+  const when = (v) => formatWhen(v, zone);
+  const parent = useParentChild();
+  const childId = isParent ? parent.selectedChildId : null;
+  const childName = isParent && parent.selectedChild ? childLabel(parent.selectedChild) : '';
+
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState({});
+  const [page, setPage] = useState(1);
   const [changes, setChanges] = useState([]);
   const [error, setError] = useState('');
   const [msg, setMsg] = useState('');
@@ -66,63 +113,228 @@ export default function StudentBookings() {
   const [tab, setTab] = useState('upcoming');
   const [view, setView] = useState('list');
   const [modeFilter, setModeFilter] = useState('all');
+  const [search, setSearch] = useState('');
   const [pendingCancel, setPendingCancel] = useState(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
   const [reschedule, setReschedule] = useState(null);
   const [replacements, setReplacements] = useState([]);
   const [joinTools, setJoinTools] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [offlinePlace, setOfflinePlace] = useState('');
+  const [busy, setBusy] = useState(false);
+  const reqId = useRef(0);
 
-  const load = async () => {
+  const waitingForChild = isParent && (parent.loading || !childId);
+
+  const begin = () => {
+    setError('');
+    setMsg('');
+  };
+
+  const load = useCallback(async () => {
+    if (waitingForChild) return;
+    const id = ++reqId.current;
     setLoading(true);
     setError('');
+    const scope = childId ? { studentUserId: childId } : {};
     try {
-      const [d, c] = await Promise.all([listBookings(), listScheduleChanges()]);
+      const [d, c, up, past, all] = await Promise.all([
+        listBookings({ ...scope, ...tabQuery(tab), page, limit: PAGE_SIZE }),
+        listScheduleChanges(),
+        listBookings({ ...scope, ...tabQuery('upcoming'), page: 1, limit: 1 }),
+        listBookings({ ...scope, ...tabQuery('completed'), page: 1, limit: 1 }),
+        listBookings({ ...scope, page: 1, limit: 1 }),
+      ]);
+      if (id !== reqId.current) return;
       setItems(d.items || []);
+      setTotal(d.total ?? (d.items || []).length);
+      setCounts({ upcoming: up.total ?? 0, completed: past.total ?? 0, all: all.total ?? 0 });
       setChanges(Array.isArray(c) ? c : c.items || []);
     } catch (err) {
-      setError(err.message);
+      if (id === reqId.current) setError(errorMessage(err));
     } finally {
-      setLoading(false);
+      if (id === reqId.current) setLoading(false);
     }
-  };
+  }, [waitingForChild, childId, tab, page]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
-  const modeItems = useMemo(
-    () => (modeFilter === 'all' ? items : items.filter((b) => (b.deliveryMode || 'online') === modeFilter)),
-    [items, modeFilter]
-  );
+  useEffect(() => {
+    setPage(1);
+  }, [tab, childId]);
 
-  const upcoming = useMemo(() => {
-    const now = new Date();
-    return modeItems.filter(
-      (b) => new Date(b.endAt || b.startAt) >= now && b.status !== 'cancelled' && b.status !== 'completed'
-    );
-  }, [modeItems]);
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((b) => {
+      if (tab === 'upcoming' && !isActive(b)) return false;
+      if (modeFilter !== 'all' && (b.deliveryMode || 'online') !== modeFilter) return false;
+      if (!q) return true;
+      return [b.subjectId?.name, b.tutorUserId?.refCode, b.refCode, b.status, b.deliveryMode, b.studentUserId?.name]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [items, tab, modeFilter, search]);
 
-  const past = useMemo(
-    () => modeItems.filter((b) => b.status === 'completed' || b.status === 'cancelled' || new Date(b.endAt || b.startAt) < new Date()),
-    [modeItems]
-  );
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const visible = tab === 'upcoming' ? upcoming : tab === 'completed' ? past : modeItems;
+  const openChangeFor = (bookingId) =>
+    changes.find((c) => idOf(c.bookingId) === String(bookingId) && OPEN_CHANGE.includes(c.status));
 
-  const list = useListFilter(
-    visible,
-    (b) =>
-      [b.subjectId?.name, b.tutorUserId?.refCode, b.status, b.deliveryMode].filter(Boolean).join(' '),
-    { resetKey: `${tab}-${modeFilter}` }
-  );
+  const loadReplacements = async (booking) => {
+    try {
+      const found = await searchTutors({
+        subjectId: idOf(booking.subjectId),
+        mode: booking.deliveryMode,
+        available: 'true',
+        limit: 12,
+      });
+      setReplacements(
+        (found.items || []).filter((item) => idOf(item.profile?.userId) !== idOf(booking.tutorUserId))
+      );
+    } catch {
+      setReplacements([]);
+    }
+  };
+
+  const openReschedule = async (booking) => {
+    begin();
+    const change = openChangeFor(booking._id) || null;
+    const slots = change?.status === 'slots_offered' ? change.offeredSlotIds || [] : [];
+    setReplacements([]);
+    setReschedule({
+      booking,
+      change,
+      slots,
+      slotId: slots[0]?._id || '',
+      reason: '',
+      entitlement: null,
+      loadingEntitlement: true,
+    });
+    if (change?.status === 'awaiting_replacement') loadReplacements(booking);
+    try {
+      const ent = await rescheduleEntitlement(isParent ? { studentUserId: idOf(booking.studentUserId) } : {});
+      setReschedule((r) => (r && r.booking._id === booking._id ? { ...r, entitlement: ent, loadingEntitlement: false } : r));
+    } catch (err) {
+      setReschedule((r) => (r ? { ...r, loadingEntitlement: false, entError: errorMessage(err) } : r));
+    }
+  };
+
+  const sendRescheduleRequest = async () => {
+    if (!reschedule) return;
+    begin();
+    setBusy(true);
+    try {
+      const data = await requestReschedule(reschedule.booking._id, { reason: reschedule.reason.trim() });
+      const slots = data.change?.status === 'slots_offered' ? data.slots || [] : [];
+      setReschedule((r) => ({
+        ...r,
+        change: data.change,
+        slots,
+        slotId: slots[0]?._id || '',
+        entitlement: data.entitlement || r.entitlement,
+      }));
+      if (data.change?.status === 'awaiting_replacement') loadReplacements(reschedule.booking);
+      setMsg('Reschedule request sent to the tutor.');
+      load();
+    } catch (err) {
+      setReschedule((r) => (r ? { ...r, actionError: errorMessage(err) } : r));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openClassTools = async (booking) => {
+    begin();
+    try {
+      const j = await joinBooking(booking._id);
+      if (j.deliveryMode === 'offline') {
+        setOfflinePlace(placeLine(j.location || {}));
+        return;
+      }
+      if (j.opensAt && new Date(j.opensAt) > new Date()) {
+        setMsg(`The Zoom room opens at ${when(j.opensAt)}. Docs and whiteboard are ready now.`);
+      }
+      setJoinTools(j);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  const openSummary = async (booking) => {
+    begin();
+    try {
+      setSummary(await getBookingSummary(booking._id));
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  const openFeedback = (b) => {
+    begin();
+    setFeedback({ booking: b, rating: 5, comment: '' });
+  };
+
+  const actionsFor = (b) => {
+    const list = [];
+    if (isActive(b) && !hasEnded(b)) {
+      list.push({
+        label: b.deliveryMode === 'offline' ? 'Location' : 'Class tools',
+        onClick: () => openClassTools(b),
+      });
+    }
+    if (isActive(b) && !hasStarted(b)) {
+      list.push({ label: 'Reschedule', onClick: () => openReschedule(b) });
+      list.push({
+        label: 'Cancel',
+        danger: true,
+        onClick: () => {
+          begin();
+          setPendingCancel(b);
+        },
+      });
+    }
+    if (b.status === 'completed' && !b.consumed) list.push({ label: 'Summary', onClick: () => openSummary(b) });
+    if (canFeedback(b)) list.push({ label: 'Feedback', onClick: () => openFeedback(b) });
+    if (b.deliveryMode === 'offline' && b.doorstep?.checkedInAt && !b.doorstep?.confirmedAt) {
+      list.push({
+        label: 'Confirm doorstep',
+        onClick: async () => {
+          begin();
+          try {
+            await confirmDoorstep(b._id);
+            setMsg('Doorstep check-in confirmed');
+            load();
+          } catch (err) {
+            setError(errorMessage(err));
+          }
+        },
+      });
+    }
+    return list;
+  };
+
+  const primaryAction = (b) => {
+    const all = actionsFor(b);
+    if (hasEnded(b)) return all.find((a) => a.label === 'Feedback') || all.find((a) => a.label === 'Summary') || null;
+    // The tutor offered new times: picking one is the next step, so surface it.
+    if (openChangeFor(b._id)?.status === 'slots_offered') {
+      return { label: 'Choose new time', onClick: () => openReschedule(b) };
+    }
+    return all[0] || null;
+  };
 
   const events = useMemo(
     () =>
-      (list.filtered || visible).map((b) => ({
+      visible.map((b) => ({
         id: b._id,
         start: b.startAt,
-        title: `${b.subjectId?.name || 'Lesson'} · ${tutorRef(b.tutorUserId)}`,
+        title: `${b.refCode || ''} ${b.subjectId?.name || 'Lesson'} · ${tutorRef(b.tutorUserId)}${
+          isParent && b.studentUserId?.name ? ` · ${b.studentUserId.name}` : ''
+        } · ${b.status || ''}`.trim(),
         variant:
           b.status === 'cancelled'
             ? 'cancelled'
@@ -133,161 +345,182 @@ export default function StudentBookings() {
                 : 'online',
         booking: b,
       })),
-    [list.filtered, visible]
+    [visible, isParent]
   );
 
-  const openChangeFor = (bookingId) =>
-    changes.find(
-      (c) =>
-        String(c.bookingId?._id || c.bookingId) === String(bookingId) &&
-        ['pending', 'slots_offered', 'awaiting_replacement', 'awaiting_approval'].includes(c.status)
+  if (isParent && parent.error && !parent.children.length) {
+    return (
+      <div className="page stack st-page">
+        <ErpBanner
+          variant="danger"
+          actions={
+            <ErpButton variant="secondary" size="sm" onClick={() => parent.refreshChildren()}>
+              Retry
+            </ErpButton>
+          }
+        >
+          {parent.error}
+        </ErpBanner>
+      </div>
     );
+  }
+  if (isParent && !parent.loading && !parent.children.length) {
+    return (
+      <div className="page stack st-page">
+        <div className="erp-card">
+          <ErpEmptyState
+            icon="users"
+            title="No linked children yet"
+            description="Link your child's account to book and manage their classes."
+            action={<LinkButton to="/parent/children/link">Link a child</LinkButton>}
+          />
+        </div>
+      </div>
+    );
+  }
 
-  const openReschedule = async (booking) => {
+  const ent = reschedule?.entitlement;
+  const change = reschedule?.change;
+  const isLoading = loading || waitingForChild;
+
+  // Group the visible list by calendar day for scanning.
+  const groups = [];
+  visible.forEach((b) => {
+    const key = formatDay(b.startAt, zone);
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.items.push(b);
+    else groups.push({ key, items: [b] });
+  });
+  const timeOf = (v) => {
     try {
-      const data = await requestReschedule(booking._id);
-      const status = data.change?.status;
-      const slots = data.slots || [];
-      setReschedule({
-        booking,
-        change: data.change,
-        slots,
-        entitlement: data.entitlement,
-        slotId: slots[0]?._id || '',
-        replacementId: '',
-      });
-      if (status === 'awaiting_replacement') {
-        const found = await searchTutors({
-          subjectId: booking.subjectId?._id || booking.subjectId,
-          mode: booking.deliveryMode,
-          available: 'true',
-          limit: 12,
-        });
-        setReplacements(
-          (found.items || []).filter((item) => {
-            const tid = item.profile?.userId?._id || item.profile?.userId;
-            return String(tid) !== String(booking.tutorUserId?._id || booking.tutorUserId);
-          })
-        );
-      } else {
-        setReplacements([]);
+      return new Date(v).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: zone || undefined });
+    } catch {
+      return new Date(v).toLocaleTimeString();
+    }
+  };
+
+  const emptyState = !counts.all ? (
+    <ErpEmptyState
+      icon="calendar"
+      title={isParent ? `No classes booked for ${childName || 'your child'} yet` : 'No classes booked yet'}
+      description="Find a verified IB tutor and book your first session."
+      action={
+        <LinkButton to={findPath} icon="search">
+          Find a tutor
+        </LinkButton>
       }
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const openClassTools = async (booking) => {
-    try {
-      const j = await joinBooking(booking._id);
-      if (j.deliveryMode === 'offline') {
-        setOfflinePlace(placeLine(j.location || {}));
-        return;
+    />
+  ) : !items.length ? (
+    <ErpEmptyState
+      icon="calendar"
+      title={tab === 'upcoming' ? 'No upcoming classes' : tab === 'completed' ? 'No past classes' : 'No classes here'}
+      description={tab === 'upcoming' ? 'Book your next session to keep momentum.' : undefined}
+      action={
+        tab === 'upcoming' ? (
+          <LinkButton to={findPath} variant="secondary">
+            Book a class
+          </LinkButton>
+        ) : null
       }
-      if (j.opensAt && new Date(j.opensAt) > new Date()) {
-        setMsg(`The Zoom room opens at ${formatInZone(j.opensAt, booking.timezone)}. Docs and whiteboard are ready now.`);
+    />
+  ) : (
+    <ErpEmptyState
+      icon="filter"
+      title="No classes match these filters"
+      description="Clear the search or mode filter to see everything on this page."
+      action={
+        <ErpButton
+          variant="secondary"
+          onClick={() => {
+            setSearch('');
+            setModeFilter('all');
+          }}
+        >
+          Clear filters
+        </ErpButton>
       }
-      setJoinTools(j);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const openSummary = async (booking) => {
-    try {
-      setSummary(await getBookingSummary(booking._id));
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const actionsFor = (b) => {
-    const items = [];
-    if (canChangeBooking(b)) {
-      items.push({
-        label: b.deliveryMode === 'offline' ? 'Location' : 'Class tools',
-        onClick: () => openClassTools(b),
-      });
-      items.push({ label: 'Reschedule', onClick: () => openReschedule(b) });
-      items.push({ label: 'Cancel', danger: true, onClick: () => setPendingCancel(b) });
-    }
-    if (b.status === 'completed') items.push({ label: 'Summary', onClick: () => openSummary(b) });
-    if (canFeedback(b)) items.push({ label: 'Feedback', onClick: () => setFeedback({ booking: b, rating: 5, comment: '' }) });
-    return items;
-  };
-
-  const primaryAction = (b) => {
-    if (canChangeBooking(b)) {
-      return {
-        label: b.deliveryMode === 'offline' ? 'Location' : 'Class tools',
-        onClick: () => openClassTools(b),
-      };
-    }
-    if (canFeedback(b)) {
-      return { label: 'Feedback', onClick: () => setFeedback({ booking: b, rating: 5, comment: '' }) };
-    }
-    if (b.status === 'completed') return { label: 'Summary', onClick: () => openSummary(b) };
-    return null;
-  };
+    />
+  );
 
   return (
-    <div className="page stack">
+    <div className="page stack st-page">
       <ErpPageHeader
-        subtitle="Join class tools, reschedule in the app, or leave feedback after a session."
+        subtitle={
+          isParent
+            ? `Classes for ${childName || 'your child'}: join, pay, reschedule or leave feedback.`
+            : 'Join your classes, pay invoices, reschedule, or leave feedback after a session.'
+        }
         actions={
-          <div className="row">
-            <Link to={policyPath} className="btn secondary">
+          <>
+            <LinkButton to={policyPath} variant="secondary" icon="shield-check">
               Class policy
-            </Link>
-            <Link to={findPath} className="btn">
+            </LinkButton>
+            <LinkButton to={findPath} icon="plus">
               Book a class
-            </Link>
-          </div>
+            </LinkButton>
+          </>
         }
       />
 
-      {error && <div className="error-banner">{error}</div>}
-      {msg && <div className="success-banner">{msg}</div>}
+      {error && (
+        <ErpBanner variant="danger" onDismiss={() => setError('')}>
+          {error}
+        </ErpBanner>
+      )}
+      {msg && (
+        <ErpBanner variant="success" onDismiss={() => setMsg('')}>
+          {msg}
+        </ErpBanner>
+      )}
 
-      <p className="muted" style={{ margin: 0 }}>
-        One student-initiated reschedule per month. The tutor must confirm a slot in the app.{' '}
-        <Link to={policyPath}>Read the policy</Link>
-      </p>
+      <ErpTabs
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { value: 'upcoming', label: 'Upcoming', count: counts.upcoming ?? 0 },
+          { value: 'completed', label: 'Past', count: counts.completed ?? 0 },
+          { value: 'all', label: 'All', count: counts.all ?? 0 },
+        ]}
+      />
 
-      <div className="avail-bar">
-        <ErpTabs
-          value={tab}
-          onChange={setTab}
-          tabs={[
-            { value: 'upcoming', label: `Upcoming (${upcoming.length})` },
-            { value: 'completed', label: `Past (${past.length})` },
-            { value: 'all', label: `All (${modeItems.length})` },
-          ]}
-        />
-        <ErpSearch value={list.search} onChange={list.setSearch} placeholder="Search bookings" />
+      <div className="st-filter-bar">
+        <ErpSearch value={search} onChange={setSearch} placeholder="Search subject, tutor or booking ID" />
         <ErpSelect
           inline
-          value={view}
-          options={[
-            { value: 'list', label: 'List' },
-            { value: 'calendar', label: 'Calendar' },
-          ]}
-          onChange={(e) => setView(e.target.value)}
-        />
-        <ErpSelect
-          inline
+          aria-label="Class mode"
           value={modeFilter}
           options={options('delivery_mode', { all: 'All modes', allValue: 'all' })}
           onChange={(e) => setModeFilter(e.target.value)}
         />
+        <div className="st-filter-bar-end">
+          <ErpSegmented
+            aria-label="View"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'list', label: 'List', icon: 'list-checks' },
+              { value: 'calendar', label: 'Calendar', icon: 'calendar' },
+            ]}
+          />
+        </div>
       </div>
+
+      <p className="muted st-hint">
+        <Icon name="info" size={14} />
+        <span>
+          {isParent
+            ? 'Your child can make one student-initiated reschedule per month; the tutor confirms a new slot in the app.'
+            : 'One student-initiated reschedule per month; the tutor confirms a new slot in the app.'}{' '}
+          Times shown in {zone || 'your local time'}. <Link to={policyPath}>Read the policy</Link>
+        </span>
+      </p>
 
       {view === 'calendar' ? (
         <ErpCard>
-          {loading ? (
-            <div className="empty">Loading bookings…</div>
+          {isLoading ? (
+            <ErpLoadingState message="Loading bookings…" />
           ) : !events.length ? (
-            <div className="empty">No bookings in this view.</div>
+            emptyState
           ) : (
             <ErpCalendar
               events={events}
@@ -299,65 +532,137 @@ export default function StudentBookings() {
               }}
             />
           )}
+          {total > PAGE_SIZE && (
+            <ErpPager
+              page={page}
+              pages={pages}
+              total={total}
+              noun="booking"
+              onPrev={() => setPage((p) => Math.max(1, p - 1))}
+              onNext={() => setPage((p) => Math.min(pages, p + 1))}
+            />
+          )}
         </ErpCard>
       ) : (
-        <ErpCard className="erp-card-flush">
-          {loading ? (
-            <div className="empty">Loading bookings…</div>
-          ) : !items.length ? (
-            <div className="empty">
-              No bookings yet. <Link to={findPath}>Find a tutor</Link>
+        <ErpCard flush>
+          {isLoading ? (
+            <div style={{ padding: '1.25rem' }} className="stack">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="row" style={{ gap: '1rem', flexWrap: 'nowrap' }}>
+                  <ErpSkeleton width="52px" height="56px" radius="8px" />
+                  <div className="stack" style={{ gap: '0.5rem', flex: 1 }}>
+                    <ErpSkeleton width="40%" height="0.9rem" />
+                    <ErpSkeleton width="65%" height="0.75rem" />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : !visible.length ? (
-            <div className="empty">No bookings in this view.</div>
-          ) : list.noMatch ? (
-            <div className="empty">No bookings match that search.</div>
+            emptyState
           ) : (
-            <div className="tutor-profile-list" style={{ padding: '0.75rem' }}>
-              {list.items.map((b) => {
-                const open = openChangeFor(b._id);
-                const primary = primaryAction(b);
-                const more = actionsFor(b).filter((a) => a.label !== primary?.label);
-                return (
-                  <article key={b._id} className="tutor-profile-row booking-card">
-                    <div className="booking-card-main">
-                      <h3>
-                        {b.subjectId?.name || 'Class'}
-                        {b.deliveryMode === 'offline' ? (
-                          <span className="erp-chip erp-chip-offline">Offline</span>
-                        ) : (
-                          <span className="erp-chip erp-chip-online">Online</span>
-                        )}
-                        {b.meetingStatus === 'live' && (
-                          <span className="erp-chip erp-chip-offline">Live now</span>
-                        )}
-                        {b.consumed && <span className="erp-chip">Consumed</span>}
-                      </h3>
-                      <p className="muted">
-                        {tutorRef(b.tutorUserId)} · {formatInZone(b.startAt, b.timezone)}
-                      </p>
-                      <p className="muted">{countryLine(b.tutorUserId?.country, b.timezone, b.currency)}</p>
-                      <div className="booking-card-status">
-                        <ErpStatusBadge status={b.status}>{titleCase(b.status)}</ErpStatusBadge>
-                        {open && (
-                          <span className="muted">{titleCase(open.status.replaceAll('_', ' '))}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="booking-card-actions">
-                      {primary && (
-                        <ErpButton variant="secondary" onClick={primary.onClick}>
-                          {primary.label}
-                        </ErpButton>
-                      )}
-                      <ErpOverflow items={more} label="More" />
-                    </div>
-                  </article>
-                );
-              })}
+            <div>
+              {groups.map((g) => (
+                <section key={g.key} aria-label={g.key}>
+                  <div className="st-group-label">{g.key}</div>
+                  <ul className="st-list">
+                    {g.items.map((b) => {
+                      const open = openChangeFor(b._id);
+                      const primary = primaryAction(b);
+                      const more = actionsFor(b).filter((a) => a.label !== primary?.label);
+                      const pay = b.payment;
+                      const unpaid = needsPayment(b);
+                      const offered = open?.status === 'slots_offered';
+                      const live = b.meetingStatus === 'live';
+                      const past = b.status === 'cancelled' || b.status === 'completed' || hasEnded(b);
+                      return (
+                        <li key={b._id} className={`st-item${unpaid || offered ? ' is-attention' : ''}`}>
+                          <DateTile value={b.startAt} timeZone={zone} tone={past ? 'muted' : undefined} />
+                          <div className="st-item-body">
+                            <p className="st-item-title">
+                              {b.subjectId?.name || 'Class'}
+                              {b.level ? <span className="erp-tag">{b.level}</span> : null}
+                              {live && (
+                                <ErpBadge tone="danger" dot>
+                                  Live now
+                                </ErpBadge>
+                              )}
+                            </p>
+                            <p className="st-item-meta">
+                              <span>
+                                <Icon name="clock" size={14} />
+                                {timeOf(b.startAt)}
+                                {b.endAt ? ` – ${timeOf(b.endAt)}` : ''}
+                                {!past && !live ? ` · ${timeUntil(b.startAt)}` : ''}
+                              </span>
+                              <span>
+                                <Icon name={b.deliveryMode === 'offline' ? 'map-pin' : 'video'} size={14} />
+                                {b.deliveryMode === 'offline' ? 'Offline' : 'Online'}
+                              </span>
+                              <span title={countryLine(b.tutorUserId?.country, b.timezone, b.currency)}>
+                                <Icon name="user" size={14} />
+                                {tutorRef(b.tutorUserId)}
+                              </span>
+                              {isParent && (
+                                <span>
+                                  <Icon name="graduation-cap" size={14} />
+                                  For {b.studentUserId?.name || childName || 'your child'}
+                                </span>
+                              )}
+                              {b.planType ? <span>{titleCase(b.planType)}</span> : null}
+                              {b.refCode ? <span className="erp-tabular">{b.refCode}</span> : null}
+                            </p>
+                            <div className="st-item-badges">
+                              <ErpStatusBadge status={b.status} dot>
+                                {titleCase(b.status)}
+                              </ErpStatusBadge>
+                              {pay && (
+                                <ErpStatusBadge status={pay.status}>
+                                  {PAYMENT_LABEL[pay.status] || titleCase(pay.status)}
+                                  {unpaid && pay.amount ? ` · ${money(pay.amount, pay.currency || b.currency)}` : ''}
+                                </ErpStatusBadge>
+                              )}
+                              {b.consumed && <ErpBadge>Consumed</ErpBadge>}
+                              {open && (
+                                <span className="st-item-note">
+                                  <Icon name="refresh" size={13} />
+                                  {offered
+                                    ? 'Tutor offered new times'
+                                    : `Reschedule: ${titleCase(open.status.replaceAll('_', ' ')).toLowerCase()}`}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="st-item-actions">
+                            {unpaid && (
+                              <LinkButton to={paymentsPath} state={{ paymentId: pay._id }} icon="credit-card">
+                                Pay
+                              </LinkButton>
+                            )}
+                            {primary && (
+                              <ErpButton variant={unpaid ? 'secondary' : 'primary'} onClick={primary.onClick}>
+                                {primary.label}
+                              </ErpButton>
+                            )}
+                            {more.length > 0 && <ErpOverflow items={more} label="More" />}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
             </div>
           )}
-          {list.total > 0 && <ErpPager {...list.pagerProps} noun="booking" />}
+          {total > 0 && (
+            <ErpPager
+              page={page}
+              pages={pages}
+              total={total}
+              noun="booking"
+              onPrev={() => setPage((p) => Math.max(1, p - 1))}
+              onNext={() => setPage((p) => Math.min(pages, p + 1))}
+            />
+          )}
         </ErpCard>
       )}
 
@@ -374,7 +679,10 @@ export default function StudentBookings() {
         footer={
           feedback ? (
             <ErpButton
+              disabled={busy}
               onClick={async () => {
+                begin();
+                setBusy(true);
                 try {
                   await sendBookingFeedback(feedback.booking._id, {
                     rating: Number(feedback.rating),
@@ -383,11 +691,13 @@ export default function StudentBookings() {
                   setFeedback(null);
                   setMsg('Feedback sent in Messages.');
                 } catch (err) {
-                  setError(err.message);
+                  setError(errorMessage(err));
+                } finally {
+                  setBusy(false);
                 }
               }}
             >
-              Send feedback
+              {busy ? 'Sending…' : 'Send feedback'}
             </ErpButton>
           ) : null
         }
@@ -403,16 +713,13 @@ export default function StudentBookings() {
               options={[5, 4, 3, 2, 1].map((n) => ({ value: String(n), label: `${n} / 5` }))}
               onChange={(e) => setFeedback((f) => ({ ...f, rating: e.target.value }))}
             />
-            <div className="field">
-              <label>Message</label>
-              <textarea
-                className="erp-search"
-                rows={4}
-                value={feedback.comment}
-                onChange={(e) => setFeedback((f) => ({ ...f, comment: e.target.value }))}
-                placeholder="What went well, or what to improve"
-              />
-            </div>
+            <ErpTextarea
+              label="Message"
+              rows={4}
+              value={feedback.comment}
+              onChange={(e) => setFeedback((f) => ({ ...f, comment: e.target.value }))}
+              placeholder="What went well, or what to improve"
+            />
           </div>
         )}
       </ErpModal>
@@ -421,16 +728,14 @@ export default function StudentBookings() {
         {summary && (
           <div className="stack">
             <div className="muted">
-              {summary.booking?.subjectId?.name} · {formatInZone(summary.booking?.startAt, summary.booking?.timezone)}
+              {summary.booking?.subjectId?.name} · {when(summary.booking?.startAt)}
             </div>
             {!summary.report ? (
-              <div className="muted">Your tutor has not written a summary yet.</div>
+              <div className="muted">The tutor has not written a summary yet.</div>
             ) : (
               <>
                 {summary.report.summary && <p style={{ margin: 0 }}>{summary.report.summary}</p>}
-                {summary.report.topicsCovered?.length > 0 && (
-                  <div>Topics: {summary.report.topicsCovered.join(', ')}</div>
-                )}
+                {summary.report.topicsCovered?.length > 0 && <div>Topics: {summary.report.topicsCovered.join(', ')}</div>}
                 {summary.report.strengths && <div>Strengths: {summary.report.strengths}</div>}
                 {summary.report.weaknesses && <div>Work on: {summary.report.weaknesses}</div>}
                 {summary.report.nextSteps && <div>Next time: {summary.report.nextSteps}</div>}
@@ -442,7 +747,7 @@ export default function StudentBookings() {
                 <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1.1rem' }}>
                   {summary.assignments.map((a) => (
                     <li key={a._id}>
-                      {a.title} · due {formatInZone(a.deadline, summary.booking?.timezone)} · {titleCase(a.status)}
+                      {a.title} · due {when(a.deadline)} · {titleCase(a.status)}
                     </li>
                   ))}
                 </ul>
@@ -455,10 +760,13 @@ export default function StudentBookings() {
       <ErpConfirm
         open={Boolean(pendingCancel)}
         title="Cancel class"
+        busy={cancelBusy}
         message={
           pendingCancel
             ? hoursUntil(pendingCancel.startAt) >= 24
-              ? `With 24 hours’ notice the usual remedy is a reschedule (1 per month), not a refund. Cancel only if you do not want another time.`
+              ? `With 24 hours’ notice the usual remedy is a reschedule (1 per month), not a refund. Cancel only if ${
+                  isParent ? 'your child does' : 'you do'
+                } not want another time. Any unpaid invoice for this class is cancelled.`
               : `This is under 24 hours’ notice. Scholaris may treat it as a consumed session unless an exception is approved.`
             : ''
         }
@@ -466,17 +774,20 @@ export default function StudentBookings() {
         danger
         onCancel={() => setPendingCancel(null)}
         onConfirm={async () => {
+          begin();
+          setCancelBusy(true);
           try {
             const result = await cancelBooking(pendingCancel._id);
-            setPendingCancel(null);
             setMsg(
-              result.policy?.consumed
+              result?.policy?.consumed || result?.booking?.consumed
                 ? 'Late cancellation: this class is marked consumed.'
                 : 'Class cancelled with notice.'
             );
             load();
           } catch (err) {
-            setError(err.message);
+            setError(errorMessage(err));
+          } finally {
+            setCancelBusy(false);
             setPendingCancel(null);
           }
         }}
@@ -489,32 +800,54 @@ export default function StudentBookings() {
         footer={
           reschedule ? (
             <>
-              <ErpButton
-                variant="secondary"
-                onClick={async () => {
-                  try {
-                    await declineReschedule(reschedule.booking._id);
-                    setReschedule(null);
-                    setMsg('Original class time stays in place.');
-                    load();
-                  } catch (err) {
-                    setError(err.message);
-                  }
-                }}
-              >
-                Keep original time
+              <ErpButton variant="secondary" onClick={() => setReschedule(null)} disabled={busy}>
+                Close
               </ErpButton>
-              {reschedule.change?.status === 'slots_offered' && reschedule.slots.length > 0 && (
+              {change && OPEN_CHANGE.includes(change.status) && (
                 <ErpButton
+                  variant="secondary"
+                  disabled={busy}
                   onClick={async () => {
+                    begin();
+                    setBusy(true);
                     try {
-                      if (!reschedule.slotId) throw new Error('Pick an available slot');
+                      await declineReschedule(reschedule.booking._id);
+                      setReschedule(null);
+                      setMsg('Original class time stays in place.');
+                      load();
+                    } catch (err) {
+                      setReschedule((r) => (r ? { ...r, actionError: errorMessage(err) } : r));
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  Keep original time
+                </ErpButton>
+              )}
+              {!change && (
+                <ErpButton
+                  disabled={busy || reschedule.loadingEntitlement || (ent && ent.remaining <= 0)}
+                  onClick={sendRescheduleRequest}
+                >
+                  {busy ? 'Sending…' : 'Send request'}
+                </ErpButton>
+              )}
+              {change?.status === 'slots_offered' && reschedule.slots.length > 0 && (
+                <ErpButton
+                  disabled={busy || !reschedule.slotId}
+                  onClick={async () => {
+                    begin();
+                    setBusy(true);
+                    try {
                       await selectRescheduleSlot(reschedule.booking._id, reschedule.slotId);
                       setReschedule(null);
                       setMsg('Class rescheduled in the Scholaris app.');
                       load();
                     } catch (err) {
-                      setError(err.message);
+                      setReschedule((r) => (r ? { ...r, actionError: errorMessage(err) } : r));
+                    } finally {
+                      setBusy(false);
                     }
                   }}
                 >
@@ -527,37 +860,85 @@ export default function StudentBookings() {
       >
         {reschedule && (
           <div className="stack">
+            {reschedule.actionError && <ErpBanner variant="danger">{reschedule.actionError}</ErpBanner>}
             <p className="muted" style={{ margin: 0 }}>
               {reschedule.booking.subjectId?.name} · {tutorRef(reschedule.booking.tutorUserId)}
+              {isParent && reschedule.booking.studentUserId?.name ? ` · for ${reschedule.booking.studentUserId.name}` : ''}
             </p>
             <p className="muted" style={{ margin: 0 }}>
-              Current: {formatInZone(reschedule.booking.startAt, reschedule.booking.timezone)}
+              Current time: {when(reschedule.booking.startAt)}
             </p>
-            {reschedule.entitlement && (
+            {reschedule.loadingEntitlement ? (
               <p className="muted" style={{ margin: 0 }}>
-                Monthly student reschedules left: {reschedule.entitlement.remaining} of{' '}
-                {reschedule.entitlement.limit} ({reschedule.entitlement.cycle}). Unused months do not carry
-                forward.
+                Checking reschedules left…
               </p>
+            ) : reschedule.entError ? (
+              <p className="muted" style={{ margin: 0 }}>
+                {reschedule.entError}
+              </p>
+            ) : ent ? (
+              <p className="muted" style={{ margin: 0 }}>
+                {isParent ? 'Your child’s' : 'Your'} student reschedules left this month: {ent.remaining} of {ent.limit}
+                {ent.cycle ? ` (${ent.cycle})` : ''}. Unused months do not carry forward.
+              </p>
+            ) : null}
+
+            {!change && (
+              <>
+                {ent && ent.remaining <= 0 ? (
+                  <p>
+                    {isParent ? 'Your child has' : 'You have'} used this month’s reschedule. Ask the tutor in
+                    Messages, or cancel with notice per the policy.
+                  </p>
+                ) : (
+                  <>
+                    <p style={{ margin: 0 }}>
+                      Sending a request uses {isParent ? 'your child’s' : 'your'} one reschedule for this month and
+                      asks the tutor to offer new times. {isParent ? 'The class' : 'Your class'} keeps its current time until a
+                      new slot is confirmed.
+                    </p>
+                    <ErpTextarea
+                      label="Reason"
+                      optional
+                      rows={3}
+                      value={reschedule.reason}
+                      onChange={(e) => setReschedule((r) => ({ ...r, reason: e.target.value }))}
+                      placeholder="e.g. school exam clash"
+                    />
+                  </>
+                )}
+              </>
             )}
-            {reschedule.change?.status === 'pending' && (
+
+            {change?.status === 'pending' && (
               <p>
-                Request sent. The assigned tutor must confirm available slots in the Scholaris app. The
-                original time stays until a slot is confirmed.
+                Request sent{change.createdAt ? ` on ${when(change.createdAt)}` : ''}. The tutor must offer
+                available slots in the Scholaris app. The original time stays until a slot is confirmed.
               </p>
             )}
-            {reschedule.change?.status === 'slots_offered' && reschedule.slots.length > 0 ? (
-              <ErpSelect
-                label="Tutor-confirmed slots"
-                value={reschedule.slotId}
-                options={slotOptions(reschedule.slots)}
-                onChange={(e) => setReschedule((f) => ({ ...f, slotId: e.target.value }))}
-              />
-            ) : reschedule.change?.status === 'awaiting_replacement' ? (
+            {change?.status === 'slots_offered' &&
+              (reschedule.slots.length > 0 ? (
+                <ErpSelect
+                  label="Tutor-offered slots"
+                  value={reschedule.slotId}
+                  options={[
+                    { value: '', label: 'Select slot' },
+                    ...reschedule.slots.map((s) => ({
+                      value: s._id,
+                      label: `${when(s.startAt)}${s.deliveryMode ? ` · ${s.deliveryMode}` : ''}`,
+                      disabled: s.isBooked,
+                    })),
+                  ]}
+                  onChange={(e) => setReschedule((f) => ({ ...f, slotId: e.target.value }))}
+                />
+              ) : (
+                <p className="muted">The offered slots are no longer free. Ask the tutor to offer new ones.</p>
+              ))}
+            {change?.status === 'awaiting_replacement' && (
               <div className="stack">
                 <p>
-                  No alternative slot is free with this tutor. You can move the paid class to another tutor.
-                  No extra payment. The other tutor must approve.
+                  No alternative slot is free with this tutor. You can move the paid class to another tutor. No
+                  extra payment. The other tutor must approve.
                 </p>
                 {!replacements.length ? (
                   <div className="muted">No other tutors with a free matching slot right now.</div>
@@ -573,14 +954,19 @@ export default function StudentBookings() {
                         </div>
                         <ErpButton
                           variant="secondary"
+                          disabled={busy}
                           onClick={async () => {
+                            begin();
+                            setBusy(true);
                             try {
                               await proposeReplacementTutor(reschedule.booking._id, tid);
                               setReschedule(null);
                               setMsg('Replacement tutor asked to approve. No extra payment.');
                               load();
                             } catch (err) {
-                              setError(err.message);
+                              setReschedule((r) => (r ? { ...r, actionError: errorMessage(err) } : r));
+                            } finally {
+                              setBusy(false);
                             }
                           }}
                         >
@@ -591,11 +977,9 @@ export default function StudentBookings() {
                   })
                 )}
               </div>
-            ) : null}
-            {reschedule.change?.status === 'awaiting_approval' && (
-              <p className="muted">
-                Waiting for {tutorRef(reschedule.change.replacementTutorUserId)} to approve.
-              </p>
+            )}
+            {change?.status === 'awaiting_approval' && (
+              <p className="muted">Waiting for {tutorRef(change.replacementTutorUserId)} to approve.</p>
             )}
           </div>
         )}

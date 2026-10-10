@@ -1,185 +1,473 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listBookings, listHomework, tutorEarnings } from '../../api';
+import {
+  homeworkStats,
+  joinBooking,
+  listBookings,
+  listScheduleChanges,
+  tutorEarnings,
+  tutorEarningsSummary,
+} from '../../api';
 import { useAuth } from '../../context/AuthContext';
-import { ErpPageHeader } from '../../components/erp';
-import { formatDate, money, statusBadge } from '../../utils/format';
-import { titleCase } from './tutorOptions';
+import {
+  ErpAttentionItem,
+  ErpAttentionList,
+  ErpAvatar,
+  ErpBanner,
+  ErpButton,
+  ErpCard,
+  ErpEmptyState,
+  ErpHero,
+  ErpNextUp,
+  ErpSkeleton,
+  ErpStat,
+  ErpStatusBadge,
+  Icon,
+} from '../../components/erp';
+import ClassToolsModal from '../../components/ClassToolsModal';
+import { errorMessage } from '../../utils/errors';
+import { money } from '../../utils/format';
+import {
+  firstName,
+  greetingWord,
+  idOf,
+  localTime,
+  needsReport,
+  startsLabel,
+  studentName,
+  titleCase,
+} from './tutorOptions';
+import './tutor.css';
 
-export default function TutorDashboard() {
-  const { profile } = useAuth();
-  const verification = profile?.verificationStatus || 'not_submitted';
-  const [bookings, setBookings] = useState([]);
-  const [homework, setHomework] = useState([]);
-  const [earnings, setEarnings] = useState([]);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
+const BOOKING_STATUSES = ['pending', 'confirmed', 'completed', 'cancelled'];
+const STUDENT_WINDOW_DAYS = 90;
+const JOIN_EARLY_MINUTES = 15;
 
-  useEffect(() => {
-    setLoading(true);
-    Promise.all([listBookings(), listHomework(), tutorEarnings()])
-      .then(([b, h, e]) => {
-        setBookings(b.items || []);
-        setHomework(h.items || []);
-        setEarnings(e.items || []);
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
+function settle(p) {
+  return p.then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e }));
+}
 
-  const stats = useMemo(() => {
-    const now = new Date();
-    const upcoming = bookings.filter(
-      (b) => new Date(b.startAt) >= now && b.status !== 'cancelled'
-    );
-    const byStatus = {};
-    bookings.forEach((b) => {
-      byStatus[b.status] = (byStatus[b.status] || 0) + 1;
-    });
-    const attendance = { present: 0, absent: 0, pending: 0 };
-    bookings.forEach((b) => {
-      const key = b.attendance || 'pending';
-      attendance[key] = (attendance[key] || 0) + 1;
-    });
-    const hwByStatus = {};
-    homework.forEach((h) => {
-      hwByStatus[h.status] = (hwByStatus[h.status] || 0) + 1;
-    });
-    const revenue = earnings.reduce((sum, p) => sum + (p.amount || 0), 0);
-    const students = new Set(
-      bookings.map((b) => b.studentUserId?._id || b.studentUserId).filter(Boolean)
-    );
-    return {
-      upcoming,
-      byStatus,
-      attendance,
-      hwByStatus,
-      revenue,
-      studentCount: students.size,
-      paidCount: earnings.length,
-    };
-  }, [bookings, homework, earnings]);
-
-  if (loading) return <div className="empty">Loading dashboard…</div>;
-
+function DashboardSkeleton() {
   return (
-    <div className="page stack">
-      <ErpPageHeader
-        subtitle="Teaching analytics from your live bookings, homework, and earnings"
-        actions={
-          <Link to="/tutor/availability" className="erp-btn-secondary">
-            Manage availability
-          </Link>
-        }
-      />
-
-      {error && <div className="error-banner">{error}</div>}
-      {verification !== 'approved' && (
-        <div className={verification === 'rejected' ? 'error-banner' : 'erp-card'}>
-          Verification is {titleCase(verification.replaceAll('_', ' '))}. Students cannot find you
-          until an admin approves you.{' '}
-          <Link to="/tutor/verification">Open verification</Link>
-        </div>
-      )}
-
-      <div className="grid three">
-        <div className="stat">
-          <div className="label">Upcoming classes</div>
-          <div className="value">{stats.upcoming.length}</div>
-        </div>
-        <div className="stat">
-          <div className="label">Active students</div>
-          <div className="value">{stats.studentCount}</div>
-        </div>
-        <div className="stat">
-          <div className="label">Confirmed earnings</div>
-          <div className="value">{money(stats.revenue)}</div>
-        </div>
-        <div className="stat">
-          <div className="label">Paid lessons</div>
-          <div className="value">{stats.paidCount}</div>
-        </div>
-        <div className="stat">
-          <div className="label">Homework open</div>
-          <div className="value">
-            {(stats.hwByStatus.assigned || 0) + (stats.hwByStatus.submitted || 0)}
-          </div>
-        </div>
-        <div className="stat">
-          <div className="label">Present sessions</div>
-          <div className="value">{stats.attendance.present || 0}</div>
-        </div>
-      </div>
-
-      <div className="grid two">
-        <section className="erp-card stack">
-          <h2>Bookings by status</h2>
-          {!Object.keys(stats.byStatus).length ? (
-            <div className="empty">No bookings yet.</div>
-          ) : (
-            Object.entries(stats.byStatus).map(([status, count]) => (
-              <div key={status} className="row" style={{ justifyContent: 'space-between' }}>
-                <span>{titleCase(status)}</span>
-                <strong>{count}</strong>
-              </div>
-            ))
-          )}
-        </section>
-        <section className="erp-card stack">
-          <h2>Attendance</h2>
-          {['present', 'absent', 'pending'].map((key) => (
-            <div key={key} className="row" style={{ justifyContent: 'space-between' }}>
-              <span>{titleCase(key)}</span>
-              <strong>{stats.attendance[key] || 0}</strong>
-            </div>
-          ))}
-        </section>
-      </div>
-
-      <div className="grid two">
-        <section className="erp-card stack">
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <h2 style={{ margin: 0 }}>Next classes</h2>
-            <Link to="/tutor/bookings" className="btn secondary">
-              All bookings
-            </Link>
-          </div>
-          {stats.upcoming.slice(0, 6).map((b) => (
-            <Link
-              key={b._id}
-              to="/tutor/bookings"
-              className="erp-list-item"
-              style={{ boxShadow: 'none' }}
-            >
-              <div className="erp-list-main">
-                <div className="erp-list-title-row">
-                  <strong>{b.studentUserId?.name || b.studentUserId?.phone || 'Student'}</strong>
-                </div>
-                <p className="erp-list-meta">
-                  {b.subjectId?.name || 'Lesson'} · {formatDate(b.startAt)}
-                </p>
-              </div>
-            </Link>
-          ))}
-          {!stats.upcoming.length && <div className="empty">No upcoming classes.</div>}
-        </section>
-        <section className="erp-card stack">
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <h2 style={{ margin: 0 }}>Homework pipeline</h2>
-            <Link to="/tutor/homework" className="btn secondary">
-              Manage
-            </Link>
-          </div>
-          {['assigned', 'submitted', 'graded', 'overdue'].map((status) => (
-            <div key={status} className="row" style={{ justifyContent: 'space-between' }}>
-              <span>
-                <span className={statusBadge(status)}>{titleCase(status)}</span>
-              </span>
-              <strong>{stats.hwByStatus[status] || 0}</strong>
-            </div>
-          ))}
-        </section>
+    <div className="page stack tutor-page" aria-busy="true">
+      <ErpSkeleton width="18rem" height="2.25rem" />
+      <ErpSkeleton width="100%" height="6rem" radius="16px" />
+      <ErpSkeleton width="100%" height="10rem" radius="12px" />
+      <div className="erp-kpis">
+        {[0, 1, 2, 3].map((i) => (
+          <ErpSkeleton key={i} width="100%" height="6.5rem" radius="12px" />
+        ))}
       </div>
     </div>
   );
 }
+
+export default function TutorDashboard() {
+  const { user, profile } = useAuth();
+  const verification = profile?.verificationStatus || 'not_submitted';
+  const [upcoming, setUpcoming] = useState({ items: [], total: 0 });
+  const [byStatus, setByStatus] = useState({});
+  const [studentCount, setStudentCount] = useState(0);
+  const [reportQueue, setReportQueue] = useState([]);
+  const [changes, setChanges] = useState([]);
+  const [hw, setHw] = useState(null);
+  const [earn, setEarn] = useState(null);
+  const [paidCount, setPaidCount] = useState(0);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [joinTools, setJoinTools] = useState(null);
+  const [joining, setJoining] = useState(false);
+
+  useEffect(() => {
+    const now = new Date();
+    const since = new Date(now.getTime() - STUDENT_WINDOW_DAYS * 86400000);
+    Promise.all([
+      settle(listBookings({ from: now.toISOString(), sort: 'startAt', excludeStatus: 'cancelled', limit: 20 })),
+      settle(Promise.all(BOOKING_STATUSES.map((status) => listBookings({ status, limit: 1 })))),
+      settle(listBookings({ from: since.toISOString(), sort: '-startAt', limit: 500 })),
+      settle(homeworkStats()),
+      settle(tutorEarningsSummary()),
+      settle(tutorEarnings({ limit: 1 })),
+      settle(listScheduleChanges()),
+    ])
+      .then(([up, counts, recent, stats, summary, paid, sched]) => {
+        const failed = [up, counts, recent, stats, summary, paid, sched].find((r) => !r.ok);
+        if (failed) setError(errorMessage(failed.e, 'Some dashboard figures could not be loaded'));
+        if (up.ok) setUpcoming({ items: up.v.items || [], total: Number(up.v.total) || 0 });
+        if (counts.ok) {
+          setByStatus(Object.fromEntries(BOOKING_STATUSES.map((s, i) => [s, Number(counts.v[i]?.total) || 0])));
+        }
+        if (recent.ok) {
+          const items = recent.v.items || [];
+          const ids = new Set(
+            items
+              .filter((b) => b.status !== 'cancelled')
+              .map((b) => idOf(b.studentUserId))
+              .filter(Boolean)
+          );
+          setStudentCount(ids.size);
+          setReportQueue(items.filter(needsReport));
+        }
+        if (stats.ok) setHw(stats.v);
+        if (summary.ok) setEarn(summary.v);
+        if (paid.ok) setPaidCount(Number(paid.v.total) || 0);
+        if (sched.ok) setChanges(Array.isArray(sched.v) ? sched.v : sched.v?.items || []);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <DashboardSkeleton />;
+
+  const me = String(user?.id ?? user?._id ?? '');
+  const name = firstName(user?.name);
+  const currency = earn?.currency;
+  const nextClasses = upcoming.items.filter((b) => b.status !== 'cancelled');
+  const next = nextClasses[0] || null;
+  const later = nextClasses.slice(1, 6);
+  const rescheduleAsks = changes.filter((c) => c.status === 'pending' && idOf(c.tutorUserId) === me);
+  const replacementAsks = changes.filter(
+    (c) => c.status === 'awaiting_approval' && idOf(c.replacementTutorUserId) === me
+  );
+  const toGrade = Number(hw?.toGrade) || 0;
+  const overdue = Number(hw?.overdue) || 0;
+  const billing = earn?.billing;
+  const withdrawable = Number(earn?.withdrawable) || 0;
+  const rating = Number(profile?.ratingAvg) || 0;
+  const ratingCount = Number(profile?.ratingCount) || 0;
+
+  const nextIsOnline = next && next.deliveryMode !== 'offline';
+  const canJoinNext =
+    next && nextIsOnline && Date.now() >= new Date(next.startAt).getTime() - JOIN_EARLY_MINUTES * 60000;
+
+  const openTools = async (b) => {
+    setJoining(true);
+    try {
+      setJoinTools(await joinBooking(b._id));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const contextLine = (() => {
+    const todayCount = nextClasses.filter(
+      (b) => new Date(b.startAt).toDateString() === new Date().toDateString()
+    ).length;
+    if (todayCount) return `You have ${todayCount} class${todayCount === 1 ? '' : 'es'} today.`;
+    if (next) return `Next class: ${startsLabel(next.startAt, next.endAt)}.`;
+    return 'No classes on the calendar yet — open more slots to get booked.';
+  })();
+
+  const attention = [];
+  if (verification !== 'approved') {
+    attention.push(
+      <ErpAttentionItem
+        key="verify"
+        icon="shield-check"
+        tone={verification === 'rejected' ? 'danger' : 'warning'}
+        title={`Verification ${titleCase(verification.replaceAll('_', ' ')).toLowerCase()}`}
+        meta="Students cannot find you until an admin approves your profile."
+        action={
+          <Link to="/tutor/verification" className="erp-btn-secondary erp-btn-sm">
+            {verification === 'pending' ? 'View status' : 'Complete'}
+          </Link>
+        }
+      />
+    );
+  }
+  if (rescheduleAsks.length) {
+    attention.push(
+      <ErpAttentionItem
+        key="resched"
+        icon="calendar"
+        tone="warning"
+        title={`${rescheduleAsks.length} reschedule request${rescheduleAsks.length === 1 ? '' : 's'}`}
+        meta={`${studentName({ studentUserId: rescheduleAsks[0].studentUserId })} · ${
+          rescheduleAsks[0].bookingId?.subjectId?.name || 'Class'
+        } · offer new slots`}
+        action={
+          <Link to="/tutor/bookings" className="erp-btn-primary erp-btn-sm">
+            Offer slots
+          </Link>
+        }
+      />
+    );
+  }
+  if (replacementAsks.length) {
+    attention.push(
+      <ErpAttentionItem
+        key="replace"
+        icon="users"
+        tone="info"
+        title={`${replacementAsks.length} replacement class request${replacementAsks.length === 1 ? '' : 's'}`}
+        meta="A student wants to move a paid class to you."
+        action={
+          <Link to="/tutor/bookings" className="erp-btn-secondary erp-btn-sm">
+            Review
+          </Link>
+        }
+      />
+    );
+  }
+  if (toGrade) {
+    attention.push(
+      <ErpAttentionItem
+        key="grade"
+        icon="clipboard-check"
+        tone="brand"
+        title={`${toGrade} submission${toGrade === 1 ? '' : 's'} to grade`}
+        meta={overdue ? `${overdue} homework overdue` : 'Students are waiting for feedback'}
+        action={
+          <Link to="/tutor/homework" className="erp-btn-secondary erp-btn-sm">
+            Grade
+          </Link>
+        }
+      />
+    );
+  }
+  if (reportQueue.length) {
+    const first = reportQueue[0];
+    attention.push(
+      <ErpAttentionItem
+        key="report"
+        icon="file-text"
+        tone="warning"
+        title={`${reportQueue.length} session summar${reportQueue.length === 1 ? 'y' : 'ies'} to write`}
+        meta={`Latest: ${studentName(first)} · ${first.subjectId?.name || 'Lesson'} · ${localTime(first.startAt)}`}
+        action={
+          <Link to={`/tutor/bookings?id=${first._id}`} className="erp-btn-secondary erp-btn-sm">
+            Write
+          </Link>
+        }
+      />
+    );
+  }
+  if (billing?.inWindow && withdrawable > 0) {
+    attention.push(
+      <ErpAttentionItem
+        key="withdraw"
+        icon="wallet"
+        tone="success"
+        title={`Withdrawal window is open — ${money(withdrawable, currency)} available`}
+        meta={`Open until day ${billing.endDay} of the month.`}
+        action={
+          <Link to="/tutor/wallet" className="erp-btn-primary erp-btn-sm">
+            Withdraw
+          </Link>
+        }
+      />
+    );
+  }
+
+  return (
+    <div className="page stack tutor-page">
+      <ErpHero
+        title={`${greetingWord()}${name ? `, ${name}` : ''}`}
+        subtitle={contextLine}
+        actions={
+          <>
+            <Link to="/tutor/availability" className="erp-btn-secondary">
+              Manage availability
+            </Link>
+            <Link to="/tutor/bookings" className="erp-btn-primary">
+              View bookings
+            </Link>
+          </>
+        }
+      />
+
+      {error && <ErpBanner variant="danger">{error}</ErpBanner>}
+
+      {next ? (
+        <ErpNextUp
+          icon={nextIsOnline ? 'video' : 'map-pin'}
+          eyebrow={`Next class · ${startsLabel(next.startAt, next.endAt)}`}
+          title={`${next.subjectId?.name || 'Lesson'} with ${studentName(next)}`}
+          meta={[
+            { icon: 'clock', text: localTime(next.startAt) },
+            { icon: nextIsOnline ? 'globe' : 'map-pin', text: nextIsOnline ? 'Online' : 'At student’s place' },
+            next.refCode ? { icon: 'tag', text: next.refCode } : null,
+          ]}
+          actions={
+            <>
+              <Link to={`/tutor/bookings?id=${next._id}`} className="erp-btn-secondary">
+                Details
+              </Link>
+              {nextIsOnline ? (
+                <ErpButton icon="video" loading={joining} onClick={() => openTools(next)}>
+                  {canJoinNext ? 'Join class' : 'Class tools'}
+                </ErpButton>
+              ) : null}
+            </>
+          }
+        />
+      ) : (
+        <ErpCard>
+          <ErpEmptyState
+            icon="calendar"
+            title="No upcoming classes"
+            description="Publish availability so students can book you."
+            action={
+              <Link to="/tutor/availability" className="erp-btn-primary">
+                Add availability
+              </Link>
+            }
+          />
+        </ErpCard>
+      )}
+
+      <ErpCard
+        heading={attention.length ? `Needs your attention · ${attention.length}` : 'Needs your attention'}
+      >
+        {attention.length ? (
+          <ErpAttentionList>{attention}</ErpAttentionList>
+        ) : (
+          <div className="tutor-all-clear">
+            <span className="erp-attention-icon is-success">
+              <Icon name="check" size={16} />
+            </span>
+            <span>
+              <strong>You’re all caught up.</strong>
+              <span className="muted"> Nothing to grade, report or reschedule.</span>
+            </span>
+          </div>
+        )}
+      </ErpCard>
+
+      <div className="erp-kpis">
+        <ErpStat
+          label="Earned this month"
+          value={money(earn?.thisMonth || 0, currency)}
+          hint={earn ? `Lifetime ${money(earn.lifetime || 0, currency)}` : undefined}
+          icon="wallet"
+          tone="success"
+          to="/tutor/earnings"
+        />
+        <ErpStat
+          label="Upcoming classes"
+          value={upcoming.total}
+          hint={`${byStatus.pending || 0} awaiting payment`}
+          icon="calendar"
+          to="/tutor/bookings"
+        />
+        <ErpStat
+          label="Active students"
+          value={studentCount}
+          hint={`Last ${STUDENT_WINDOW_DAYS} days`}
+          icon="users"
+          tone="info"
+          to="/tutor/students"
+        />
+        <ErpStat
+          label="Rating"
+          value={rating ? rating.toFixed(1) : '—'}
+          hint={ratingCount ? `From ${ratingCount} review${ratingCount === 1 ? '' : 's'}` : 'No reviews yet'}
+          icon="star"
+          tone="warning"
+        />
+      </div>
+
+      <div className="grid two">
+        <ErpCard
+          heading="Coming up"
+          description="Your next classes, in your time zone"
+          headerActions={
+            <Link to="/tutor/bookings" className="erp-btn-ghost erp-btn-sm">
+              All bookings
+            </Link>
+          }
+        >
+          {later.length ? (
+            <ul className="tutor-mini-list">
+              {later.map((b) => (
+                <li key={b._id}>
+                  <Link to={`/tutor/bookings?id=${b._id}`} className="tutor-mini-row">
+                    <ErpAvatar name={studentName(b)} size="sm" />
+                    <span className="tutor-mini-main">
+                      <strong>{studentName(b)}</strong>
+                      <span className="muted">
+                        {b.subjectId?.name || 'Lesson'} · {b.deliveryMode === 'offline' ? 'Offline' : 'Online'}
+                      </span>
+                    </span>
+                    <span className="tutor-mini-side">
+                      <span className="num">{localTime(b.startAt)}</span>
+                      {b.status === 'pending' ? (
+                        <ErpStatusBadge status="pending">awaiting payment</ErpStatusBadge>
+                      ) : null}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>
+              {next ? 'Nothing else scheduled after your next class.' : 'No classes scheduled.'}
+            </p>
+          )}
+        </ErpCard>
+
+        <ErpCard
+          heading="Teaching snapshot"
+          description="Bookings and homework at a glance"
+          headerActions={
+            <Link to="/tutor/homework" className="erp-btn-ghost erp-btn-sm">
+              Homework
+            </Link>
+          }
+        >
+          <div className="tutor-snapshot">
+            <div>
+              <p className="erp-overline">Bookings</p>
+              <div className="erp-divided">
+                {BOOKING_STATUSES.map((status) => (
+                  <div key={status} className="erp-kv-row">
+                    <ErpStatusBadge status={status} dot>
+                      {titleCase(status)}
+                    </ErpStatusBadge>
+                    <strong className="num">{byStatus[status] || 0}</strong>
+                  </div>
+                ))}
+                <div className="erp-kv-row">
+                  <span className="muted">Paid lessons</span>
+                  <strong className="num">{paidCount}</strong>
+                </div>
+              </div>
+            </div>
+            <div>
+              <p className="erp-overline">Homework</p>
+              <div className="erp-divided">
+                {[
+                  ['assigned', 'Assigned', hw?.assigned],
+                  ['submitted', 'To grade', hw?.toGrade],
+                  ['graded', 'Graded', hw?.graded],
+                  ['overdue', 'Overdue', hw?.overdue],
+                ].map(([status, label, count]) => (
+                  <div key={status} className="erp-kv-row">
+                    <ErpStatusBadge status={status} dot>
+                      {label}
+                    </ErpStatusBadge>
+                    <strong className="num">{count || 0}</strong>
+                  </div>
+                ))}
+                <div className="erp-kv-row">
+                  <span className="muted">Open in total</span>
+                  <strong className="num">{(hw?.assigned || 0) + (hw?.toGrade || 0)}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+          {billing && !billing.inWindow ? (
+            <p className="muted text-erp-sm" style={{ margin: '1rem 0 0' }}>
+              Withdrawals open on days {billing.startDay}–{billing.endDay} of each month
+              {withdrawable > 0 ? ` · ${money(withdrawable, currency)} ready` : ''}.
+            </p>
+          ) : null}
+        </ErpCard>
+      </div>
+
+      <ClassToolsModal open={Boolean(joinTools)} join={joinTools} onClose={() => setJoinTools(null)} />
+    </div>
+  );
+}
+
