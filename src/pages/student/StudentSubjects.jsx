@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { listSubjects, selectSubjects } from '../../api';
+import { addFavorite, listFavorites, listSubjects, removeFavorite, selectSubjects } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useCatalog } from '../../context/CatalogContext';
 import {
@@ -15,7 +15,7 @@ import {
 } from '../../components/erp';
 import { useListFilter } from '../../hooks/useListFilter';
 import { errorMessage } from '../../utils/errors';
-import { LinkButton } from './studentUi';
+import { FavButton, LinkButton } from './studentUi';
 import './student.css';
 
 export default function StudentSubjects() {
@@ -28,13 +28,33 @@ export default function StudentSubjects() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState('all');
+  const [favIds, setFavIds] = useState([]);
+  const [favBusy, setFavBusy] = useState('');
 
   useEffect(() => {
     listSubjects()
       .then((data) => setSubjects(data.items || []))
       .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false));
+    listFavorites('subject')
+      .then((rows) => setFavIds((rows || []).map((r) => String(r.targetId))))
+      .catch(() => {});
   }, []);
+
+  const toggleFav = async (id) => {
+    setError('');
+    setFavBusy(id);
+    const on = favIds.includes(id);
+    try {
+      if (on) await removeFavorite('subject', id);
+      else await addFavorite('subject', id);
+      setFavIds((prev) => (on ? prev.filter((x) => x !== id) : [...prev, id]));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setFavBusy('');
+    }
+  };
 
   const savedIds = useMemo(() => (profile?.subjectIds || []).map((s) => (s._id || s).toString()), [profile]);
 
@@ -68,8 +88,9 @@ export default function StudentSubjects() {
   const visible = useMemo(() => {
     if (tab === 'all') return subjects;
     if (tab === 'mine') return subjects.filter((s) => selected.includes(s._id));
+    if (tab === 'fav') return subjects.filter((s) => favIds.includes(String(s._id)));
     return subjects.filter((s) => (s.category || 'ibdp') === tab);
-  }, [subjects, tab, selected]);
+  }, [subjects, tab, selected, favIds]);
 
   const list = useListFilter(visible, (s) => [s.name, s.code, s.category].filter(Boolean).join(' '), {
     resetKey: tab,
@@ -105,6 +126,7 @@ export default function StudentSubjects() {
         tabs={[
           { value: 'all', label: 'All', count: subjects.length },
           { value: 'mine', label: 'Selected', count: selected.length },
+          { value: 'fav', label: 'Favourites', icon: 'heart', count: favIds.length },
           ...options('subject_category').map((o) => ({ value: o.value, label: o.label, count: countFor(o.value) })),
         ]}
       />
@@ -123,10 +145,22 @@ export default function StudentSubjects() {
         <div className="erp-card">
           <ErpEmptyState
             icon="book-open"
-            title={tab === 'mine' ? 'No subjects selected yet' : 'No subjects in this category'}
-            description={tab === 'mine' ? 'Pick the subjects you study from the All tab.' : undefined}
+            title={
+              tab === 'mine'
+                ? 'No subjects selected yet'
+                : tab === 'fav'
+                  ? 'No favourite subjects yet'
+                  : 'No subjects in this category'
+            }
+            description={
+              tab === 'mine'
+                ? 'Pick the subjects you study from the All tab.'
+                : tab === 'fav'
+                  ? 'Tap the heart on a subject to keep it here.'
+                  : undefined
+            }
             action={
-              tab === 'mine' ? (
+              tab === 'mine' || tab === 'fav' ? (
                 <ErpButton variant="secondary" onClick={() => setTab('all')}>
                   Browse all subjects
                 </ErpButton>
@@ -138,8 +172,10 @@ export default function StudentSubjects() {
         <div className="st-subject-grid">
           {list.items.map((s) => {
             const on = selected.includes(s._id);
+            const fav = favIds.includes(String(s._id));
             return (
-              <label key={s._id} className={`st-subject${on ? ' is-on' : ''}`}>
+              <div key={s._id} className="st-subject-wrap">
+              <label className={`st-subject${on ? ' is-on' : ''}`}>
                 <input type="checkbox" checked={on} onChange={() => toggle(s._id)} />
                 <span className="st-check" aria-hidden="true">
                   <Icon name="check" size={14} />
@@ -157,6 +193,13 @@ export default function StudentSubjects() {
                   </span>
                 </span>
               </label>
+              <FavButton
+                on={fav}
+                disabled={favBusy === String(s._id)}
+                label={fav ? `Remove ${s.name} from favourites` : `Add ${s.name} to favourites`}
+                onClick={() => toggleFav(String(s._id))}
+              />
+              </div>
             );
           })}
         </div>

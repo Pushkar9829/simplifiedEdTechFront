@@ -12,12 +12,14 @@ import {
   deleteCountry,
   deleteLookup,
   deleteSubject,
+  getFxRates,
   listBoards,
   listClassLevels,
   listConfigs,
   listCountries,
   listLookups,
   listSubjects,
+  saveFxRates,
   setConfig,
   updateBoard,
   updateClassLevel,
@@ -26,9 +28,11 @@ import {
   updateSubject,
 } from '../../api';
 import { useCatalog } from '../../context/CatalogContext';
+import { setFxCache } from '../../utils/displayMoney';
 import {
   ErpBanner,
   ErpButton,
+  ErpCard,
   ErpConfirm,
   ErpInput,
   ErpModal,
@@ -88,6 +92,146 @@ const EMPTY_SUBJECT = {
   isActive: true,
 };
 const EMPTY_CONFIG = { key: '', value: '', valueType: 'text', description: '' };
+
+/**
+ * Display-only exchange rates (1 USD = rate). Students see "≈ converted" prices in their
+ * preferred currency; invoices and charges always stay in the original currency.
+ */
+function FxRatesCard() {
+  const [rows, setRows] = useState([]);
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [msg, setMsg] = useState('');
+
+  const apply = (data) => {
+    const quotes = data?.quotes || {};
+    setRows(
+      Object.keys(quotes)
+        .filter((code) => code !== 'USD')
+        .sort()
+        .map((code) => ({ code, rate: String(quotes[code]) }))
+    );
+    setUpdatedAt(data?.updatedAt || null);
+  };
+
+  useEffect(() => {
+    getFxRates()
+      .then(apply)
+      .catch((err) => setError(errorMessage(err)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const setRow = (i, key) => (e) => {
+    const value = key === 'code' ? e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) : e.target.value;
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)));
+  };
+
+  const codes = rows.map((r) => r.code);
+  const rowError = (r, i) => {
+    if (!/^[A-Z]{3}$/.test(r.code)) return 'Use a 3-letter code';
+    if (r.code === 'USD') return 'USD is the base (always 1)';
+    if (codes.indexOf(r.code) !== i) return 'Listed twice';
+    if (!(Number(r.rate) > 0)) return 'Must be above 0';
+    return '';
+  };
+  const invalid = rows.some((r, i) => rowError(r, i));
+
+  const save = async () => {
+    setError('');
+    setMsg('');
+    setSaving(true);
+    try {
+      const quotes = { USD: 1 };
+      rows.forEach((r) => {
+        quotes[r.code] = Number(r.rate);
+      });
+      const data = await saveFxRates(quotes);
+      apply(data);
+      setFxCache(data);
+      setMsg('Exchange rates saved. Converted prices update right away.');
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ErpCard
+      heading="Display exchange rates"
+      description={`How much 1 USD buys in each currency. Used only to show "≈" prices in a viewer's preferred currency; invoices stay in the original currency.${
+        updatedAt ? ` Last updated ${new Date(updatedAt).toLocaleString()}.` : ''
+      }`}
+      headerActions={
+        <ErpButton icon="check" loading={saving} disabled={loading || invalid} onClick={save}>
+          Save rates
+        </ErpButton>
+      }
+    >
+      {error && <ErpBanner variant="danger">{error}</ErpBanner>}
+      {msg && (
+        <ErpBanner variant="success" onDismiss={() => setMsg('')}>
+          {msg}
+        </ErpBanner>
+      )}
+      {loading ? (
+        <p className="muted">Loading rates…</p>
+      ) : (
+        <div className="adm-fx">
+          <div className="adm-fx-grid">
+            <div className="adm-fx-row is-base">
+              <ErpInput label="Currency" value="USD" disabled />
+              <ErpInput label="Per 1 USD" value="1" disabled helper="Base currency" />
+            </div>
+            {rows.map((r, i) => {
+              const err = rowError(r, i);
+              return (
+                <div className="adm-fx-row" key={i}>
+                  <ErpInput
+                    label="Currency"
+                    value={r.code}
+                    maxLength={3}
+                    onChange={setRow(i, 'code')}
+                    error={err && err !== 'Must be above 0' ? err : undefined}
+                  />
+                  <ErpInput
+                    label={`Per 1 USD`}
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputMode="decimal"
+                    value={r.rate}
+                    onChange={setRow(i, 'rate')}
+                    error={err === 'Must be above 0' ? err : undefined}
+                  />
+                  <ErpButton
+                    variant="ghost"
+                    size="sm"
+                    iconOnly
+                    icon="trash"
+                    className="adm-fx-remove"
+                    aria-label={`Remove ${r.code || 'currency'}`}
+                    onClick={() => setRows((prev) => prev.filter((_, idx) => idx !== i))}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <ErpButton
+            variant="secondary"
+            size="sm"
+            icon="plus"
+            onClick={() => setRows((prev) => [...prev, { code: '', rate: '' }])}
+          >
+            Add currency
+          </ErpButton>
+        </div>
+      )}
+    </ErpCard>
+  );
+}
 
 export default function AdminSettingsPage() {
   const [params, setParams] = useSearchParams();
@@ -540,6 +684,8 @@ export default function AdminSettingsPage() {
           </div>
         )}
       </AdminTableCard>
+
+      <FxRatesCard />
 
       <ErpModal
         open={Boolean(editing)}

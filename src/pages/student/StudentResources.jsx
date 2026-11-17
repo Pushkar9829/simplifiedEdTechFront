@@ -28,6 +28,7 @@ import {
   Icon,
 } from '../../components/erp';
 import { useCatalog } from '../../context/CatalogContext';
+import { useParentChild } from '../../context/ParentChildContext';
 import { RATING_OPTIONS, subjectFilterOptions, titleCase } from './studentOptions';
 import { formatDay } from './studentTime';
 import { FavButton, LinkButton } from './studentUi';
@@ -39,7 +40,10 @@ const PAGE_SIZE = 24;
 export default function StudentResources() {
   const location = useLocation();
   const navigate = useNavigate();
-  const paymentsPath = location.pathname.startsWith('/parent') ? '/parent/payments' : '/student/payments';
+  const isParent = location.pathname.startsWith('/parent');
+  const paymentsPath = isParent ? '/parent/payments' : '/student/payments';
+  const parent = useParentChild();
+  const childId = isParent ? parent.selectedChildId : null;
   const { options } = useCatalog();
   const [subjects, setSubjects] = useState([]);
   const [items, setItems] = useState([]);
@@ -65,7 +69,7 @@ export default function StudentResources() {
   };
 
   const loadBookmarks = async () => {
-    const bm = await myBookmarks();
+    const bm = await myBookmarks(childId || undefined);
     setBookmarks(Array.isArray(bm) ? bm : bm?.items || []);
   };
 
@@ -75,7 +79,7 @@ export default function StudentResources() {
     setError('');
     try {
       const [res] = await Promise.all([
-        listResources({ ...filters, search: query, page, limit: PAGE_SIZE }),
+        listResources({ ...filters, search: query, page, limit: PAGE_SIZE, ...(childId ? { studentUserId: childId } : {}) }),
         loadBookmarks(),
       ]);
       if (id !== reqId.current) return;
@@ -105,7 +109,7 @@ export default function StudentResources() {
 
   useEffect(() => {
     load();
-  }, [filters.subjectId, filters.type, query, page]);
+  }, [filters.subjectId, filters.type, query, page, childId]);
 
   const bookmarkedIds = new Set(bookmarks.map((b) => String(b.resourceId?._id || b.resourceId || '')));
 
@@ -158,7 +162,13 @@ export default function StudentResources() {
 
   return (
     <div className="page stack st-page">
-      <ErpPageHeader subtitle="Notes, past papers, markschemes and other study files from tutors." />
+      <ErpPageHeader
+        subtitle={
+          isParent
+            ? 'Notes, past papers and study files. Favourites are saved for the child selected at the top.'
+            : 'Notes, past papers, markschemes and other study files from tutors.'
+        }
+      />
       {error && (
         <ErpBanner variant="danger" onDismiss={() => setError('')}>
           {error}
@@ -191,7 +201,7 @@ export default function StudentResources() {
         onChange={setTab}
         tabs={[
           { value: 'all', label: 'Library', count: total },
-          { value: 'saved', label: 'Saved', count: bookmarkedIds.size },
+          { value: 'saved', label: 'Favourites', icon: 'heart', count: bookmarkedIds.size },
         ]}
       />
 
@@ -220,11 +230,11 @@ export default function StudentResources() {
           <ErpEmptyState
             icon={tab === 'saved' ? 'heart' : 'folder'}
             title={
-              tab === 'saved' ? 'No saved resources' : query ? 'No resources match that search' : 'No resources found'
+              tab === 'saved' ? 'No favourite resources yet' : query ? 'No resources match that search' : 'No resources found'
             }
             description={
               tab === 'saved'
-                ? 'Save files from the library to find them quickly here.'
+                ? 'Tap the heart on any file in the library to keep it here.'
                 : 'Try a different subject or type.'
             }
             action={
@@ -266,12 +276,12 @@ export default function StudentResources() {
                     </div>
                     <FavButton
                       on={saved}
-                      label={saved ? 'Remove from saved' : 'Save resource'}
+                      label={saved ? 'Remove from favourites' : 'Add to favourites'}
                       onClick={async () => {
                         begin();
                         try {
-                          if (saved) await unbookmarkResource(r._id);
-                          else await bookmarkResource(r._id);
+                          if (saved) await unbookmarkResource(r._id, childId || undefined);
+                          else await bookmarkResource(r._id, childId || undefined);
                           await loadBookmarks();
                         } catch (err) {
                           setError(errorMessage(err));

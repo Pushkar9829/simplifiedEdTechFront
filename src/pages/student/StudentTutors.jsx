@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  addFavoriteTutor,
+  addFavoriteTutorFor,
   listBoards,
   listClassLevels,
   listCountries,
   listSubjects,
-  removeFavoriteTutor,
+  removeFavoriteTutorFor,
   searchTutors,
 } from '../../api';
 import {
@@ -23,10 +23,11 @@ import {
   ErpSkeleton,
   Icon,
 } from '../../components/erp';
-import { formatPlace, money, tutorRef } from '../../utils/format';
+import { formatPlace, tutorRef } from '../../utils/format';
 import { errorMessage } from '../../utils/errors';
 import { mediaUrl } from '../../utils/mediaUrl';
 import { useCatalog } from '../../context/CatalogContext';
+import { useDisplayMoney } from '../../utils/displayMoney';
 import { AVAILABILITY_FILTER_OPTIONS, stateOptions, subjectFilterOptions } from './studentOptions';
 import { FavButton, LinkButton, Rating } from './studentUi';
 import './student.css';
@@ -64,6 +65,7 @@ const emptyFilters = {
   subjectId: '',
   level: '',
   language: '',
+  countryId: '',
   country: '',
   state: '',
   timeSlot: '',
@@ -80,6 +82,8 @@ const emptyFilters = {
   classLevelId: '',
   category: '',
   needBased: '',
+  gender: '',
+  pincode: '',
 };
 
 const FILTER_KEYS = Object.keys(emptyFilters);
@@ -87,15 +91,9 @@ const FILTER_KEYS = Object.keys(emptyFilters);
 const SHEET_KEYS = [
   'category',
   'timeSlot',
-  'favorites',
-  'needBased',
   'boardId',
   'classLevelId',
   'available',
-  'country',
-  'state',
-  'city',
-  'area',
   'language',
   'minRating',
   'minPrice',
@@ -132,8 +130,9 @@ function TutorCardSkeleton() {
   );
 }
 
-export default function StudentTutors({ profileBase = '/student/tutors' }) {
+export default function StudentTutors({ profileBase = '/student/tutors', studentUserId = '' }) {
   const { options, labelFor } = useCatalog();
+  const fmtMoney = useDisplayMoney();
   const isParent = profileBase.startsWith('/parent');
   const [searchParams, setSearchParams] = useSearchParams();
   const paramsKey = searchParams.toString();
@@ -179,12 +178,7 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
     setError('');
     try {
       const query = { ...nextFilters, page: nextPage, limit: PAGE_SIZE };
-      if (query.mode !== 'offline') {
-        delete query.country;
-        delete query.state;
-        delete query.city;
-        delete query.area;
-      }
+      if (studentUserId) query.studentUserId = studentUserId;
       const data = await searchTutors(query);
       setItems(data.items || []);
       setTotal(data.total || 0);
@@ -220,8 +214,8 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
     setError('');
     setFavBusy(String(id));
     try {
-      if (item.favorite) await removeFavoriteTutor(id);
-      else await addFavoriteTutor(id);
+      if (item.favorite) await removeFavoriteTutorFor(id, studentUserId);
+      else await addFavoriteTutorFor(id, studentUserId);
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -248,7 +242,7 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
       case 'favorites':
         return 'Favourites';
       case 'needBased':
-        return 'Need-based classes';
+        return v === 'false' ? 'Regular students only' : 'Need-based / one-off';
       case 'available':
         return 'Has free slots';
       case 'boardId':
@@ -265,20 +259,22 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
         return `${v}+ yrs`;
       case 'language':
         return `Speaks ${v}`;
+      case 'countryId':
+        return countries.find((c) => String(c._id) === String(v))?.name || 'Country';
+      case 'gender':
+        return `${labelFor('sex', v) || v} tutors`;
+      case 'pincode':
+        return `PIN ${v}`;
       default:
         return v;
     }
   };
 
-  const activeKeys = FILTER_KEYS.filter((k) => {
-    if (!applied[k]) return false;
-    if (['country', 'state', 'city', 'area'].includes(k) && applied.mode !== 'offline') return false;
-    return true;
-  });
+  const activeKeys = FILTER_KEYS.filter((k) => Boolean(applied[k]));
   const sheetCount = SHEET_KEYS.filter((k) => activeKeys.includes(k)).length;
   const removeFilter = (k) => {
     const next = { ...applied, [k]: '' };
-    if (k === 'mode') Object.assign(next, { country: '', state: '', city: '', area: '' });
+    if (k === 'countryId' || k === 'country') Object.assign(next, { countryId: '', country: '', state: '' });
     if (k === 'category') next.subjectId = '';
     setFilters(next);
     apply(next, 1);
@@ -287,6 +283,9 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
     setFilters(emptyFilters);
     apply(emptyFilters, 1);
   };
+
+  const selectedCountryName =
+    countries.find((c) => String(c._id) === String(filters.countryId))?.name || filters.country || '';
 
   const subjectList = filters.category
     ? subjects.filter((s) => (s.category || 'ibdp') === filters.category)
@@ -333,12 +332,17 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
                 icon: o.value === 'offline' ? 'map-pin' : 'video',
               })),
             ]}
-            onChange={(value) =>
-              setInstant({
-                mode: value === 'all' ? '' : value,
-                ...(value !== 'offline' ? { country: '', state: '', city: '', area: '' } : {}),
-              })
-            }
+            onChange={(value) => setInstant({ mode: value === 'all' ? '' : value })}
+          />
+          <ErpSegmented
+            aria-label="Show tutors"
+            className="st-fav-switch"
+            value={filters.favorites === 'true' ? 'fav' : 'all'}
+            options={[
+              { value: 'all', label: 'All' },
+              { value: 'fav', label: 'Favourites', icon: 'heart' },
+            ]}
+            onChange={(value) => setInstant({ favorites: value === 'fav' ? 'true' : '' })}
           />
           <ErpSelect
             inline
@@ -356,12 +360,83 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
           />
           <div className="st-filter-bar-end">
             <ErpButton variant="secondary" icon="filter" onClick={() => setMoreOpen(true)}>
-              Filters
+              More
               {sheetCount ? <span className="st-filter-count">{sheetCount}</span> : null}
             </ErpButton>
             <button type="submit" hidden aria-hidden="true" tabIndex={-1} />
           </div>
         </form>
+        <div className="st-filter-bar st-filter-bar-place" role="group" aria-label="Location and gender">
+          <ErpSelect
+            inline
+            aria-label="Country"
+            value={filters.countryId}
+            options={[
+              { value: '', label: 'Any country' },
+              ...countries.map((c) => ({ value: c._id, label: `${c.name} (${c.code})` })),
+            ]}
+            onChange={(e) => setInstant({ countryId: e.target.value, country: '', state: '' })}
+          />
+          {stateOptions(selectedCountryName).length > 1 ? (
+            <ErpSelect
+              inline
+              aria-label="State"
+              value={filters.state}
+              options={stateOptions(selectedCountryName)}
+              onChange={(e) => setInstant({ state: e.target.value })}
+            />
+          ) : (
+            <input
+              className="erp-search"
+              aria-label="State"
+              placeholder="State"
+              value={filters.state}
+              onChange={(e) => setFilters((f) => ({ ...f, state: e.target.value }))}
+              onBlur={() => apply(filters, 1)}
+            />
+          )}
+          <input
+            className="erp-search"
+            aria-label="Area"
+            placeholder="Area / locality"
+            value={filters.area}
+            onChange={(e) => setFilters((f) => ({ ...f, area: e.target.value }))}
+            onBlur={() => apply(filters, 1)}
+          />
+          <input
+            className="erp-search"
+            aria-label="Pincode"
+            placeholder="Pincode"
+            inputMode="numeric"
+            value={filters.pincode}
+            onChange={(e) => {
+              const value = e.target.value.replace(/[^A-Za-z0-9 -]/g, '').slice(0, 12);
+              setFilters((f) => ({ ...f, pincode: value }));
+            }}
+            onBlur={() => apply(filters, 1)}
+          />
+          <ErpSelect
+            inline
+            aria-label="Tutor gender"
+            value={filters.gender}
+            options={[
+              { value: '', label: 'Any gender' },
+              ...options('sex').filter((o) => o.value !== 'prefer_not'),
+            ]}
+            onChange={(e) => setInstant({ gender: e.target.value })}
+          />
+          <ErpSelect
+            inline
+            aria-label="Need-based classes"
+            value={filters.needBased}
+            options={[
+              { value: '', label: 'Any plan' },
+              { value: 'true', label: 'Need-based / one-off' },
+              { value: 'false', label: 'Regular students only' },
+            ]}
+            onChange={(e) => setInstant({ needBased: e.target.value })}
+          />
+        </div>
 
         <div className="st-results-meta">
           <span>
@@ -465,24 +540,6 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
               options={AVAILABILITY_FILTER_OPTIONS}
               onChange={setDraft('available')}
             />
-            <ErpSelect
-              label="Class plan"
-              value={filters.needBased}
-              options={[
-                { value: '', label: 'Any plan' },
-                { value: 'true', label: 'Need-based (single classes)' },
-              ]}
-              onChange={setDraft('needBased')}
-            />
-            <ErpSelect
-              label="Show"
-              value={filters.favorites}
-              options={[
-                { value: '', label: 'All tutors' },
-                { value: 'true', label: 'My favourites' },
-              ]}
-              onChange={setDraft('favorites')}
-            />
           </div>
         </div>
 
@@ -512,34 +569,11 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
         </div>
 
         <div className="erp-form-section">
-          <p className="erp-section-title">In-person location</p>
-          {filters.mode === 'offline' ? (
-            <div className="erp-form-grid">
-              <ErpSelect
-                label="Country"
-                value={filters.country}
-                options={[
-                  { value: '', label: 'Any country' },
-                  ...countries.map((c) => ({ value: c.name, label: `${c.name} (${c.code})` })),
-                ]}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setFilters((f) => ({ ...f, country: value, state: '' }));
-                }}
-              />
-              {stateOptions(filters.country).length > 1 ? (
-                <ErpSelect label="State" value={filters.state} options={stateOptions(filters.country)} onChange={setDraft('state')} />
-              ) : (
-                <ErpInput label="State" value={filters.state} onChange={setDraft('state')} />
-              )}
-              <ErpInput label="City" value={filters.city} onChange={setDraft('city')} />
-              <ErpInput label="Area" value={filters.area} onChange={setDraft('area')} />
-            </div>
-          ) : (
-            <p className="muted" style={{ margin: 0 }}>
-              Choose <strong>Offline</strong> in the mode switch to filter in-person tutors by location.
-            </p>
-          )}
+          <p className="erp-section-title">City</p>
+          <p className="muted st-sheet-help">
+            Country, state, area, pincode, gender and need-based are on the search bar above.
+          </p>
+          <ErpInput label="City" value={filters.city} onChange={setDraft('city')} />
         </div>
       </ErpModal>
 
@@ -578,6 +612,7 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
             const extraSubjects = Math.max(0, names.length - 3);
             const avatar = mediaUrl(u.avatar);
             const rate = fromRate(p);
+            const price = rate ? fmtMoney(rate, p.currency) : null;
             const profileTo = `${profileBase}/${id}`;
             return (
               <article key={id} className="erp-card st-tutor-card">
@@ -627,13 +662,16 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
                       <Icon name="award" size={14} />
                       {p.experienceYears || 0} yrs
                     </span>
-                    {u.country ? (
+                    {u.country || u.timezone ? (
                       <span>
                         <Icon name="globe" size={14} />
-                        {u.country}
+                        {[u.country, u.timezone].filter(Boolean).join(' · ')}
                       </span>
                     ) : null}
-                    {applied.mode === 'offline' ? (
+                    {p.sex && p.sex !== 'prefer_not' ? (
+                      <span>{labelFor('sex', p.sex) || p.sex}</span>
+                    ) : null}
+                    {applied.mode === 'offline' || applied.city || applied.area || applied.pincode ? (
                       <span>
                         <Icon name="map-pin" size={14} />
                         {formatPlace(p.location, u.country)}
@@ -672,8 +710,9 @@ export default function StudentTutors({ profileBase = '/student/tutors' }) {
                       {rate ? (
                         <>
                           <small>from </small>
-                          {money(rate, p.currency)}
+                          {price.primary}
                           <small> /hr</small>
+                          {price.approx ? <span className="erp-price-approx">{price.approx} /hr</span> : null}
                         </>
                       ) : (
                         <small>Rate on request</small>

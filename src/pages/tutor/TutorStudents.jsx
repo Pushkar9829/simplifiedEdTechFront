@@ -27,6 +27,7 @@ import { useListFilter } from '../../hooks/useListFilter';
 import { errorMessage } from '../../utils/errors';
 import { formatDate } from '../../utils/format';
 import { STUDENT_PICKER_QUERY, studentsFromBookings } from './tutorOptions';
+import BlockUserButton, { useMyBlocks } from '../shared/BlockUserButton';
 import './tutor.css';
 
 function TopicChips({ items, tone }) {
@@ -55,6 +56,7 @@ export default function TutorStudents() {
   const [noteBusy, setNoteBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const blocks = useMyBlocks();
 
   useEffect(() => {
     listBookings(STUDENT_PICKER_QUERY)
@@ -144,8 +146,10 @@ export default function TutorStudents() {
                       <ErpAvatar name={s.name || s.phone} src={s.avatar} size="sm" />
                       <span className="tutor-mini-main">
                         <strong>{s.name || s.phone || 'Student'}</strong>
-                        {s.refCode || s.country ? (
-                          <span className="muted">{[s.refCode, s.country].filter(Boolean).join(' · ')}</span>
+                        {s.refCode || s.country || blocks.isBlocked(s._id) ? (
+                          <span className="muted">
+                            {[blocks.isBlocked(s._id) ? 'Blocked' : '', s.refCode, s.country].filter(Boolean).join(' · ')}
+                          </span>
                         ) : null}
                       </span>
                       <Icon name="chevron-right" size={16} />
@@ -169,11 +173,17 @@ export default function TutorStudents() {
                         'Student'}
                     </span>
                   </div>
-                  <span style={{ marginLeft: 'auto' }}>
+                  <span style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'flex-end' }}>
                     <Link to="/tutor/homework/new" className="erp-btn-secondary erp-btn-sm">
                       <Icon name="plus" size={15} />
                       Assign homework
                     </Link>
+                    <BlockUserButton
+                      userId={current._id}
+                      name={current.name || current.refCode || 'this student'}
+                      blocked={blocks.isBlocked(current._id)}
+                      onChange={() => blocks.reload()}
+                    />
                   </span>
                 </div>
               </ErpCard>

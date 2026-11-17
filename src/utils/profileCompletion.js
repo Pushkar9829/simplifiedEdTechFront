@@ -6,8 +6,11 @@ export function missingProfileFields(user, profile) {
   if (!user) return [];
   const missing = [];
   if (!has(user.name)) missing.push('name');
-  if (user.role === 'student') {
+  if (user.role === 'student' || user.role === 'parent') {
     if (!has(idOf(user.countryId))) missing.push('country');
+    if (!has(user.preferredCurrency || profile?.preferredCurrency)) missing.push('preferred currency');
+  }
+  if (user.role === 'student') {
     if (!has(idOf(profile?.boardId))) missing.push('board');
     if (!has(idOf(profile?.classLevelId))) missing.push('class level');
   }

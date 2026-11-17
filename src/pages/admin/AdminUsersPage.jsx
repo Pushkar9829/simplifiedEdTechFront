@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { adminSetUserStatus, adminUsers } from '../../api';
+import {
+  adminGetUser,
+  adminSetUserStatus,
+  adminUserBlocks,
+  adminUsers,
+  adminVoidUserOpen,
+  adminVerifyTax,
+} from '../../api';
 import {
   ErpBanner,
   ErpButton,
@@ -13,6 +20,8 @@ import {
   ErpTextarea,
 } from '../../components/erp';
 import { useAuth } from '../../context/AuthContext';
+import { useCatalog } from '../../context/CatalogContext';
+import { mediaUrl } from '../../utils/mediaUrl';
 import { errorMessage } from '../../utils/errors';
 import { formatDate } from '../../utils/format';
 import {
@@ -29,8 +38,47 @@ import {
 import { ROLE_OPTIONS, USER_STATUS_OPTIONS, USER_STATUS_SET_OPTIONS, titleCase } from './adminOptions';
 import { useAdminModalQuery } from './useAdminModalQuery';
 
+// DOB is a calendar date stored at UTC midnight; never shift it by the viewer's zone.
+function dobText(v) {
+  const d = new Date(v);
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
 const PAGE_SIZE = 20;
 const VOIDING = ['blacklisted', 'suspended'];
+const BLOCK_GRID = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: '1rem',
+};
+const BLOCK_HEAD = { margin: '0 0 0.5rem', fontSize: 'var(--erp-font-sm)', fontWeight: 600 };
+const BLOCK_LIST = { listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' };
+const BLOCK_ITEM = { display: 'flex', flexDirection: 'column', minWidth: 0, overflowWrap: 'anywhere' };
+
+function BlockRows({ rows, field, empty }) {
+  if (!rows?.length) return <p className="muted" style={{ margin: 0 }}>{empty}</p>;
+  return (
+    <ul style={BLOCK_LIST}>
+      {rows.map((r) => {
+        const u = r[field] || {};
+        return (
+          <li key={r._id} style={BLOCK_ITEM}>
+            <strong>{u.name || u.refCode || 'User'}</strong>
+            <span className="muted">
+              {[titleCase(u.role || ''), u.refCode, r.createdAt ? formatDate(r.createdAt) : '']
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+            {r.reason ? <span className="muted" style={{ fontStyle: 'italic' }}>“{r.reason}”</span> : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 const ROLE_VALUES = ROLE_OPTIONS.map((o) => o.value).filter(Boolean);
 const STATUS_VALUES = USER_STATUS_OPTIONS.map((o) => o.value).filter(Boolean);
 
@@ -59,6 +107,39 @@ export default function AdminUsersPage() {
   const [busy, setBusy] = useState(false);
   const [modalError, setModalError] = useState('');
   const [notice, setNotice] = useState('');
+  const { labelFor } = useCatalog();
+  const [detail, setDetail] = useState(null);
+  const [blocks, setBlocks] = useState(null);
+  const [voidOpen, setVoidOpen] = useState(false);
+  const [voidReason, setVoidReason] = useState('');
+  const [voidBusy, setVoidBusy] = useState(false);
+  const [taxBusy, setTaxBusy] = useState(false);
+
+  // Full record (DOB/age, sex, currency, emergency contact, intro page, links, blocks) for the modal.
+  useEffect(() => {
+    setDetail(null);
+    setBlocks(null);
+    setVoidOpen(false);
+    setVoidReason('');
+    setTaxBusy(false);
+    if (!editId) return undefined;
+    let cancelled = false;
+    adminGetUser(editId)
+      .then((d) => {
+        if (cancelled) return;
+        setDetail(d);
+        if (d?.user) {
+          setSelected((cur) => (cur && String(cur._id) === String(d.user._id) ? cur : d.user));
+        }
+      })
+      .catch(() => {});
+    adminUserBlocks(editId)
+      .then((b) => !cancelled && setBlocks(b))
+      .catch(() => !cancelled && setBlocks({ byUser: [], againstUser: [] }));
+    return () => {
+      cancelled = true;
+    };
+  }, [editId, reloadKey]);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -132,6 +213,9 @@ export default function AdminUsersPage() {
       setSelected(next);
       setUsers((rows) => rows.map((u) => (u._id === next._id ? { ...u, ...next } : u)));
       setNotice(`Status changed to ${titleCase(next.status)}.`);
+      adminGetUser(next._id)
+        .then(setDetail)
+        .catch(() => {});
       setStaged('');
       setReason('');
     } catch (err) {
@@ -140,6 +224,47 @@ export default function AdminUsersPage() {
       setBusy(false);
     }
   };
+
+  const voidOpenItems = async () => {
+    if (!selected) return;
+    setVoidBusy(true);
+    setModalError('');
+    try {
+      const res = await adminVoidUserOpen(selected._id, voidReason.trim());
+      setNotice(
+        `Voided ${res?.cancelledBookings ?? 0} upcoming booking${res?.cancelledBookings === 1 ? '' : 's'} and ${
+          res?.failedPayments ?? 0
+        } open invoice${res?.failedPayments === 1 ? '' : 's'}. Account status unchanged.`
+      );
+      setVoidOpen(false);
+      setVoidReason('');
+    } catch (err) {
+      setModalError(errorMessage(err));
+    } finally {
+      setVoidBusy(false);
+    }
+  };
+
+  const recheckTax = async () => {
+    if (!selected) return;
+    setTaxBusy(true);
+    setModalError('');
+    try {
+      await adminVerifyTax(selected._id);
+      const next = await adminGetUser(selected._id);
+      setDetail(next);
+      setNotice('GST checksum / portal lookup and identity checksums re-ran.');
+    } catch (err) {
+      setModalError(errorMessage(err));
+    } finally {
+      setTaxBusy(false);
+    }
+  };
+
+  const d = detail?.details || {};
+  const ec = d.emergencyContact || {};
+  const hasEc = Boolean(ec.name || ec.phone || ec.email);
+  const links = detail?.links || [];
 
   const filtered = Boolean(query || status);
 
@@ -325,7 +450,7 @@ export default function AdminUsersPage() {
           <>
             <AdminSummary
               avatarName={selected.name || selected.phone || 'User'}
-              avatarSrc={selected.avatarUrl || selected.avatar || undefined}
+              avatarSrc={d.avatar || selected.avatarUrl || selected.avatar || undefined}
               eyebrow={titleCase(selected.role)}
               title={selected.name || 'Unnamed user'}
               meta={selected.phone}
@@ -347,6 +472,191 @@ export default function AdminUsersPage() {
                 ]}
               />
             </AdminSection>
+            {selected.role !== 'admin' ? (
+              <AdminSection title="Personal">
+                {!detail ? (
+                  <p className="muted" style={{ margin: 0 }}>
+                    Loading…
+                  </p>
+                ) : (
+                  <AdminKV
+                    items={[
+                      {
+                        label: 'Date of birth',
+                        value: d.dateOfBirth
+                          ? `${dobText(d.dateOfBirth)}${d.age != null ? ` · age ${d.age}` : ''}`
+                          : 'Not set',
+                      },
+                      { label: 'Sex', value: d.sex ? labelFor('sex', d.sex) : 'Not set' },
+                      { label: 'Preferred currency', value: d.preferredCurrency || 'Not set' },
+                      selected.role === 'tutor' && {
+                        label: 'Teaching currency',
+                        value: detail?.profile?.currency || '—',
+                      },
+                      {
+                        label: 'Intro page',
+                        value: d.introPageUrl ? (
+                          <a href={mediaUrl(d.introPageUrl)} target="_blank" rel="noreferrer">
+                            Open intro page
+                          </a>
+                        ) : (
+                          'Not added'
+                        ),
+                      },
+                      {
+                        label: 'Profile picture',
+                        value: d.avatar ? (
+                          <a href={mediaUrl(d.avatar)} target="_blank" rel="noreferrer">
+                            View picture
+                          </a>
+                        ) : (
+                          'Not added'
+                        ),
+                      },
+                      {
+                        label: 'Emergency contact',
+                        full: true,
+                        value: hasEc
+                          ? [ec.name, ec.relationship ? `(${titleCase(ec.relationship)})` : '', ec.phone, ec.email]
+                              .filter(Boolean)
+                              .join(' · ')
+                          : 'Not added',
+                      },
+                      links.length && {
+                        label: selected.role === 'parent' ? 'Linked children' : 'Linked parents',
+                        full: true,
+                        value: links
+                          .map((l) => {
+                            const o = selected.role === 'parent' ? l.studentUserId : l.parentUserId;
+                            return [o?.name || o?.refCode || 'User', o?.phone].filter(Boolean).join(' · ');
+                          })
+                          .join(', '),
+                      },
+                      detail?.blacklist?.length && {
+                        label: 'Signup blocklist',
+                        full: true,
+                        value: detail.blacklist.map((b) => `${b.kind}: ${b.value}`).join(', '),
+                      },
+                    ]}
+                  />
+                )}
+              </AdminSection>
+            ) : null}
+            {selected.role !== 'admin' ? (
+              <AdminSection
+                title="Tax & identity"
+                description="GSTIN uses the official GSTN checksum then a live taxpayer lookup. Aadhaar uses UIDAI Verhoeff; SSN uses SSA issuance rules."
+                actions={
+                  <ErpButton variant="secondary" size="sm" icon="refresh" loading={taxBusy} onClick={recheckTax}>
+                    Re-check
+                  </ErpButton>
+                }
+              >
+                {!detail ? (
+                  <p className="muted" style={{ margin: 0 }}>
+                    Loading…
+                  </p>
+                ) : (
+                  <AdminKV
+                    items={[
+                      detail?.profile?.gst?.hasGst && {
+                        label: 'GSTIN',
+                        value: [detail.profile.gst.number, detail.profile.gst.legalName].filter(Boolean).join(' · ') || '—',
+                      },
+                      (detail?.profile?.gst?.status || detail?.profile?.gst?.hasGst) && {
+                        label: 'GST status',
+                        value: [
+                          titleCase(String(detail.profile.gst.status || '').replace(/_/g, ' ')),
+                          detail.profile.gst.portalNote,
+                        ]
+                          .filter(Boolean)
+                          .join(' — '),
+                        full: Boolean(detail.profile.gst.portalNote),
+                      },
+                      detail?.profile?.identity?.type && {
+                        label: 'ID type',
+                        value: titleCase(detail.profile.identity.type),
+                      },
+                      {
+                        label: 'Identity',
+                        value: detail?.profile?.identity?.number
+                          ? [
+                              detail.profile.identity.number,
+                              titleCase(String(detail.profile.identity.status || '').replace(/_/g, ' ')),
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')
+                          : 'Not added',
+                      },
+                      detail?.profile?.identity?.portalNote && {
+                        label: 'ID check',
+                        value: detail.profile.identity.portalNote,
+                        full: true,
+                      },
+                    ]}
+                  />
+                )}
+              </AdminSection>
+            ) : null}
+            <AdminSection
+              title="Blocks"
+              description="User-to-user blocks. Blocks made by a parent also apply to their linked children."
+            >
+              {!blocks ? (
+                <p className="muted" style={{ margin: 0 }}>
+                  Loading…
+                </p>
+              ) : (
+                <div style={BLOCK_GRID}>
+                  <div>
+                    <h4 style={BLOCK_HEAD}>Blocked by this user ({blocks.byUser?.length || 0})</h4>
+                    <BlockRows rows={blocks.byUser} field="targetUserId" empty="Has not blocked anyone." />
+                  </div>
+                  <div>
+                    <h4 style={BLOCK_HEAD}>Blocked this user ({blocks.againstUser?.length || 0})</h4>
+                    <BlockRows rows={blocks.againstUser} field="byUserId" empty="Nobody has blocked this user." />
+                  </div>
+                </div>
+              )}
+            </AdminSection>
+            {!isSelf && selected.role !== 'admin' ? (
+              <AdminSection
+                title="Open bookings & invoices"
+                description="Cancel this user's upcoming bookings and void their open invoices without changing the account status."
+                actions={
+                  !voidOpen ? (
+                    <ErpButton variant="secondary" size="sm" icon="x-circle" onClick={() => setVoidOpen(true)}>
+                      Void open bookings
+                    </ErpButton>
+                  ) : null
+                }
+              >
+                {voidOpen ? (
+                  <div className="stack" style={{ gap: '0.75rem' }}>
+                    <ErpBanner variant="warning" title="Void open bookings?">
+                      Upcoming bookings are cancelled, slots freed, open invoices voided and the other parties
+                      notified. This cannot be undone.
+                    </ErpBanner>
+                    <ErpTextarea
+                      label="Reason"
+                      id="user-void-reason"
+                      rows={2}
+                      value={voidReason}
+                      onChange={(e) => setVoidReason(e.target.value)}
+                      placeholder="Shown on the cancelled bookings"
+                    />
+                    <div className="row" style={{ gap: '0.5rem', justifyContent: 'flex-end' }}>
+                      <ErpButton variant="ghost" size="sm" onClick={() => setVoidOpen(false)} disabled={voidBusy}>
+                        Cancel
+                      </ErpButton>
+                      <ErpButton variant="danger" size="sm" loading={voidBusy} onClick={voidOpenItems}>
+                        Void now
+                      </ErpButton>
+                    </div>
+                  </div>
+                ) : null}
+              </AdminSection>
+            ) : null}
             <AdminSection
               title="Account status"
               description={
@@ -377,7 +687,9 @@ export default function AdminUsersPage() {
                         <ErpBanner variant="danger" title={`${titleCase(staged)} this account?`}>
                           This cancels the user&apos;s upcoming bookings, voids their open invoices, and
                           notifies the other parties.
-                          {staged === 'blacklisted' ? ' The user will not be able to sign in.' : ''}
+                          {staged === 'blacklisted'
+                            ? " The user will not be able to sign in, and their phone and email can't be used for a new account."
+                            : ''}
                         </ErpBanner>
                       ) : null}
                       <ErpTextarea

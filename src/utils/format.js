@@ -47,7 +47,8 @@ export function tutorRef(user) {
 const STATUS_VARIANTS = {
   delivered: [
     'paid', 'approved', 'graded', 'completed', 'present', 'active', 'resolved', 'delivered',
-    'verified', 'format_ok', 'confirmed', 'consumed', 'success', 'succeeded', 'settled', 'released',
+    'verified', 'format_ok', 'portal_verified', 'checksum_ok', 'confirmed', 'consumed', 'success',
+    'succeeded', 'settled', 'released',
   ],
   pending: [
     'pending', 'draft', 'awaiting_confirmation', 'assigned', 'unverified', 'not_submitted',

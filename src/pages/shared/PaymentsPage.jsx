@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
+  getMySubscription,
   getMyWallet,
   listPayable,
   listPlans,
@@ -14,6 +15,7 @@ import { useCatalog } from '../../context/CatalogContext';
 import { useAuth } from '../../context/AuthContext';
 import { childLabel, useParentChild } from '../../context/ParentChildContext';
 import { formatDate, money } from '../../utils/format';
+import { convertAmount, useFxRates } from '../../utils/displayMoney';
 import { errorMessage } from '../../utils/errors';
 import { titleCase } from '../admin/adminOptions';
 import {
@@ -37,9 +39,11 @@ import {
   Icon,
   useIsPhone,
 } from '../../components/erp';
+import CurrencyChip from '../../components/CurrencyChip';
 import { RowIcon, StatusTrack } from './sharedUi';
 import { dateOnly } from './sharedTime';
 import './shared.css';
+import './plans.css';
 
 const PAGE_SIZE = 10;
 const OPEN_REFUND = ['requested', 'accepted', 'disputed'];
@@ -68,21 +72,58 @@ function sumByCurrency(items) {
 
 const statusLabel = (s) => (s === 'awaiting_confirmation' ? 'Awaiting confirmation' : titleCase(s));
 
+function listedFx(p) {
+  if (!p?.listCurrency || !p?.listAmount) return false;
+  return String(p.listCurrency).toUpperCase() !== String(p.currency || '').toUpperCase();
+}
+
+function invoiceMoney(p) {
+  const primary = money(p.amount, p.currency);
+  if (!listedFx(p)) return primary;
+  return (
+    <>
+      {primary}
+      <div className="muted text-erp-xs">listed {money(p.listAmount, p.listCurrency)}</div>
+    </>
+  );
+}
+
+// Student plans (decision #2): period length per billing cycle.
+const CYCLE_MONTHS = { one_time: 1, monthly: 1, quarterly: 3, half_yearly: 6, yearly: 12 };
+const CYCLE_LABEL = {
+  one_time: 'One-time',
+  monthly: 'Renews monthly',
+  quarterly: 'Renews every 3 months',
+  half_yearly: 'Renews every 6 months',
+  yearly: 'Renews yearly',
+};
+const PLAN_KIND_LABEL = { single: 'Single class', regular: 'Regular (weekly)', subscription: 'Subscription' };
+const planValidity = (plan) => {
+  const m = CYCLE_MONTHS[plan.billingCycle] || 1;
+  return `valid ${m} month${m === 1 ? '' : 's'}`;
+};
+const shortDate = (d) =>
+  d ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+
 export default function PaymentsPage({ showPlans = true }) {
   const phone = useIsPhone();
   const location = useLocation();
   const { user } = useAuth();
   const { byGroup, options, labelFor } = useCatalog();
+  const fxRates = useFxRates();
   const parentCtx = useParentChild();
   const me = String(user?.id ?? user?._id ?? '');
   const isTutor = user?.role === 'tutor' || location.pathname.startsWith('/tutor');
   const isParent = user?.role === 'parent';
   const canRefund = user?.role === 'student' || user?.role === 'parent';
-  const plansVisible = showPlans && !isParent;
+  const plansVisible = showPlans;
   const walletPath = location.pathname.replace(/\/payments\/?$/, '/wallet');
   const supportPath = location.pathname.replace(/\/payments\/?$/, '/support');
 
-  const [tab, setTab] = useState(isTutor && plansVisible ? 'plans' : 'due');
+  const queryTab = new URLSearchParams(location.search).get('tab');
+  const [tab, setTab] = useState(
+    plansVisible && (queryTab === 'plans' || isTutor) ? 'plans' : 'due'
+  );
   const [payable, setPayable] = useState({ items: [], total: 0 });
   const [duePage, setDuePage] = useState(1);
   const [history, setHistory] = useState({ items: [], total: 0 });
@@ -105,6 +146,8 @@ export default function PaymentsPage({ showPlans = true }) {
   const [disputeTarget, setDisputeTarget] = useState(null);
   const [disputeNote, setDisputeNote] = useState('');
   const [subscribingId, setSubscribingId] = useState('');
+  const [mySub, setMySub] = useState(null);
+  const planChildId = isParent ? parentCtx.selectedChildId || '' : '';
 
   // A "Pay" link from another page passes the invoice id: open its pay dialog once it is listed.
   const pendingPayId = useRef(location.state?.paymentId || null);
@@ -211,6 +254,23 @@ export default function PaymentsPage({ showPlans = true }) {
       .catch((err) => setError(errorMessage(err, 'Could not load plans')));
   }, [plansVisible]);
 
+  // Current student plan (own, or the selected child's for parents).
+  const loadMySub = useCallback(async () => {
+    if (!plansVisible || isTutor || (isParent && !planChildId)) {
+      setMySub(null);
+      return;
+    }
+    try {
+      setMySub(await getMySubscription(isParent ? { studentUserId: planChildId } : {}));
+    } catch {
+      setMySub(null);
+    }
+  }, [plansVisible, isTutor, isParent, planChildId]);
+
+  useEffect(() => {
+    if (tab === 'plans') loadMySub();
+  }, [tab, loadMySub]);
+
   const refreshAll = () => {
     loadDue();
     loadHistory();
@@ -221,11 +281,24 @@ export default function PaymentsPage({ showPlans = true }) {
 
   const payerId = (p) => idOf(p.payerUserId);
   const beneficiaryId = (p) => idOf(p.beneficiaryUserId);
-  const childName = (p) => (isParent && payerId(p) && payerId(p) !== me ? p.payerUserId?.name || 'Child' : '');
+  const childNameById = (id) => {
+    const link = parentCtx.children.find((c) => idOf(c.studentUserId) === String(id));
+    return link ? childLabel(link) : '';
+  };
+  const childName = (p) => {
+    if (!isParent) return '';
+    if (payerId(p) && payerId(p) !== me) return p.payerUserId?.name || 'Child';
+    const forId = idOf(p.forStudentUserId);
+    return forId && forId !== me ? childNameById(forId) || 'Child' : '';
+  };
 
   const matchesChild = (p) => {
     if (!isParent || childFilter === 'all') return true;
-    return payerId(p) === childFilter || idOf(p.bookingId?.studentUserId) === childFilter;
+    return (
+      payerId(p) === childFilter ||
+      idOf(p.bookingId?.studentUserId) === childFilter ||
+      idOf(p.forStudentUserId) === childFilter
+    );
   };
   const matchesSearch = (p) => {
     const q = search.trim().toLowerCase();
@@ -268,10 +341,18 @@ export default function PaymentsPage({ showPlans = true }) {
   const walletBlock = (p) => {
     if (!p) return '';
     if (!wallet) return 'Wallet unavailable';
+    const due = Number(p.amount) || 0;
     if (wallet.currency && p.currency && wallet.currency !== p.currency) {
-      return `Your wallet is in ${wallet.currency}; this invoice is in ${p.currency}.`;
+      const need = convertAmount(due, p.currency, wallet.currency, fxRates);
+      if (need == null) {
+        return `Need an FX rate from ${p.currency} to ${wallet.currency}. Ask admin to set catalog rates.`;
+      }
+      if ((Number(wallet.balance) || 0) < need) {
+        return `Need ${money(need, wallet.currency)} in your wallet (invoice is ${money(due, p.currency)}).`;
+      }
+      return '';
     }
-    if ((Number(wallet.balance) || 0) < (Number(p.amount) || 0)) return 'Not enough wallet balance.';
+    if ((Number(wallet.balance) || 0) < due) return 'Not enough wallet balance.';
     return '';
   };
 
@@ -462,7 +543,7 @@ export default function PaymentsPage({ showPlans = true }) {
                   {chips(p)}
                 </div>
               </div>
-              <div className="sp-invoice-amount num">{money(p.amount, p.currency)}</div>
+              <div className="sp-invoice-amount num">{invoiceMoney(p)}</div>
               <div className="sp-invoice-action">{invoiceAction(p)}</div>
             </li>
           );
@@ -521,7 +602,7 @@ export default function PaymentsPage({ showPlans = true }) {
                   {chips(p)}
                 </div>
               </div>
-              <div className="sp-invoice-amount num">{money(p.amount, p.currency)}</div>
+              <div className="sp-invoice-amount num">{invoiceMoney(p)}</div>
               {canRequestRefund(p) ? <div className="sp-invoice-action">{refundButton(p)}</div> : null}
             </li>
           ))}
@@ -556,7 +637,7 @@ export default function PaymentsPage({ showPlans = true }) {
                 </td>
                 <td>{historyStatus(p)}</td>
                 <td className="num">
-                  <strong>{money(p.amount, p.currency)}</strong>
+                  <strong>{invoiceMoney(p)}</strong>
                 </td>
                 <td className="sp-cell-actions">{refundButton(p)}</td>
               </tr>
@@ -606,7 +687,7 @@ export default function PaymentsPage({ showPlans = true }) {
                   </div>
                 </div>
                 <div className="sp-refund-amount">
-                  <span className="num">{money(p.amount, p.currency)}</span>
+                  <span className="num">{invoiceMoney(p)}</span>
                   <ErpStatusBadge status={rr.status} dot>
                     {titleCase(rr.status)}
                   </ErpStatusBadge>
@@ -672,10 +753,13 @@ export default function PaymentsPage({ showPlans = true }) {
             : 'Pay class and plan invoices, see your history and request refunds.'
         }
         actions={
-          <Link to={walletPath} className="erp-btn-secondary">
-            <Icon name="wallet" size={16} />
-            Open wallet
-          </Link>
+          <>
+            {!isTutor ? <CurrencyChip /> : null}
+            <Link to={walletPath} className="erp-btn-secondary">
+              <Icon name="wallet" size={16} />
+              Open wallet
+            </Link>
+          </>
         }
       />
       {error ? (
@@ -769,13 +853,49 @@ export default function PaymentsPage({ showPlans = true }) {
         {tab === 'plans' && plansVisible && (
           <div className="sp-panel-body">
             <div className="sp-section-intro">
-              <h3>{isTutor ? 'Rank higher in student search' : 'Subscription plans'}</h3>
+              <h3>{isTutor ? 'Rank higher in student search' : 'Class plans'}</h3>
               <p>
                 {isTutor
                   ? 'Premium tutors appear first, with a Premium badge. Subscribing creates an invoice — pay it from Pay now.'
-                  : 'Subscribing creates an invoice that you pay from Pay now.'}
+                  : 'Prepaid class credits you can use with any tutor. Buying creates an invoice; credits start when it is paid.'}
               </p>
             </div>
+            {isParent ? (
+              childOptions ? (
+                <div className="sp-plan-for">
+                  <ErpSelect
+                    inline
+                    aria-label="Buy plans for"
+                    value={planChildId}
+                    options={childOptions.filter((o) => o.value !== 'all')}
+                    leading={<Icon name="user" size={15} />}
+                    onChange={(e) => parentCtx.setSelectedChildId(e.target.value)}
+                  />
+                  <span className="sp-quiet">Plans and credits belong to the selected child.</span>
+                </div>
+              ) : (
+                <ErpBanner variant="info">Link a child to buy a plan for them.</ErpBanner>
+              )
+            ) : null}
+            {!isTutor && mySub?.subscription ? (
+              <div className={`sp-plan-current${mySub.active ? '' : ' sp-plan-current-off'}`}>
+                <Icon name="ticket" size={18} />
+                <div>
+                  <strong>
+                    {mySub.active
+                      ? `${mySub.subscription.planName} · ${mySub.creditsLeft} of ${mySub.subscription.classesTotal} credits left`
+                      : `${mySub.subscription.planName} · ${titleCase(mySub.subscription.status)}`}
+                  </strong>
+                  <span className="sp-quiet">
+                    {mySub.active
+                      ? `Valid until ${shortDate(mySub.subscription.periodEnd)}${
+                          mySub.subscription.autoRenew ? ' · auto-renews from the wallet' : ''
+                        }. Buying again adds credits now.`
+                      : `Ended ${shortDate(mySub.subscription.periodEnd)}. Buy a plan to book with credits again.`}
+                  </span>
+                </div>
+              </div>
+            ) : null}
             {!plans.length ? (
               <ErpEmptyState icon="sparkles" title="No plans available" description="Check back later." />
             ) : (
@@ -793,20 +913,27 @@ export default function PaymentsPage({ showPlans = true }) {
                     <div className="sp-plan-price">
                       <span className="num">{money(plan.price, plan.currency)}</span>
                       <span className="sp-quiet">
-                        {titleCase(plan.planKind || plan.billingCycle)}
-                        {plan.classCount ? ` · ${plan.classCount} classes` : ''}
+                        {isTutor
+                          ? titleCase(plan.planKind || plan.billingCycle)
+                          : `${PLAN_KIND_LABEL[plan.planKind] || titleCase(plan.planKind || 'plan')} · ${
+                              plan.classCount || 1
+                            } class${(plan.classCount || 1) === 1 ? '' : 'es'} · ${planValidity(plan)}`}
                       </span>
+                      {!isTutor ? (
+                        <span className="sp-quiet">{CYCLE_LABEL[plan.billingCycle] || titleCase(plan.billingCycle)}</span>
+                      ) : null}
                     </div>
                     {plan.description ? <p className="sp-plan-desc">{plan.description}</p> : null}
                     <ErpButton
                       variant="secondary"
                       block
                       loading={subscribingId === plan._id}
+                      disabled={isParent && !planChildId}
                       onClick={async () => {
                         startAction();
                         setSubscribingId(plan._id);
                         try {
-                          await subscribePlan(plan._id);
+                          await subscribePlan(plan._id, isParent ? planChildId : undefined);
                           setMsg('Plan invoice created — pay it from the Pay now tab');
                           refreshAll();
                         } catch (err) {
@@ -816,7 +943,7 @@ export default function PaymentsPage({ showPlans = true }) {
                         }
                       }}
                     >
-                      {subscribingId === plan._id ? 'Subscribing…' : 'Subscribe'}
+                      {subscribingId === plan._id ? 'Subscribing…' : isTutor ? 'Subscribe' : 'Buy plan'}
                     </ErpButton>
                   </div>
                 ))}
@@ -887,6 +1014,12 @@ export default function PaymentsPage({ showPlans = true }) {
             <div className="sp-pay-summary">
               <span className="sp-pay-label">Amount due</span>
               <span className="sp-pay-amount num">{money(payTarget.amount, payTarget.currency)}</span>
+              {listedFx(payTarget) ? (
+                <span className="muted text-erp-xs">
+                  Tutor listed {money(payTarget.listAmount, payTarget.listCurrency)}
+                  {payTarget.fxRate ? ` · rate ${payTarget.fxRate}` : ''}
+                </span>
+              ) : null}
               <span className="sp-pay-desc">{payTarget.description || 'Invoice'}</span>
             </div>
             <dl className="sp-kv sp-kv-rows">

@@ -10,6 +10,9 @@ import {
   listCountries,
   listCurrencies,
   listOfferings,
+  updateMe,
+  updateOffering,
+  updateTutorProfile,
   listSubjects,
 } from '../../api';
 import { useAuth } from '../../context/AuthContext';
@@ -35,6 +38,7 @@ import {
   Icon,
   useIsPhone,
 } from '../../components/erp';
+import CalendarFeedButton from '../../components/CalendarFeedPanel';
 import { useListFilter } from '../../hooks/useListFilter';
 import { formatInZone, money } from '../../utils/format';
 import { useCatalog } from '../../context/CatalogContext';
@@ -76,7 +80,7 @@ function emptySlot(location, timezone) {
 
 export default function TutorAvailability() {
   const phone = useIsPhone();
-  const { user, profile } = useAuth();
+  const { user, profile, refresh } = useAuth();
   const { options } = useCatalog();
   const LEVEL_OPTIONS = options('subject_level');
   const DELIVERY_OPTIONS = options('delivery_mode');
@@ -109,6 +113,49 @@ export default function TutorAvailability() {
   const [locating, setLocating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [editingId, setEditingId] = useState('');
+  const [needBased, setNeedBased] = useState(profile?.needBasedClasses !== false);
+  const [needBusy, setNeedBusy] = useState(false);
+  const [region, setRegion] = useState({
+    countryId: user?.countryId?._id || user?.countryId || '',
+    timezone: user?.timezone || browserTimezone(),
+    currency: profile?.currency || '',
+  });
+  const [regionBusy, setRegionBusy] = useState(false);
+
+  useEffect(() => {
+    setNeedBased(profile?.needBasedClasses !== false);
+  }, [profile?.needBasedClasses]);
+
+  useEffect(() => {
+    setRegion((r) => ({
+      countryId: user?.countryId?._id || user?.countryId || r.countryId,
+      timezone: user?.timezone || r.timezone,
+      currency: profile?.currency || r.currency,
+    }));
+  }, [user?.countryId, user?.timezone, profile?.currency]);
+
+  const toggleNeedBased = async () => {
+    const next = !needBased;
+    setError('');
+    setMsg('');
+    setNeedBusy(true);
+    setNeedBased(next);
+    try {
+      await updateTutorProfile({ needBasedClasses: next });
+      await refresh?.();
+      setMsg(
+        next
+          ? 'Need-based classes are on: students can book one-off classes with you.'
+          : 'Need-based classes are off: only regular or subscription students can book you.'
+      );
+    } catch (err) {
+      setNeedBased(!next);
+      setError(errorMessage(err));
+    } finally {
+      setNeedBusy(false);
+    }
+  };
 
   const teachingMode = profile?.teachingMode || 'both';
   const allowsOnline = teachingMode !== 'offline';
@@ -231,6 +278,23 @@ export default function TutorAvailability() {
     try {
       const online = allowsOnline ? Number(offering.onlineRate || 0) : 0;
       const offline = Number(offering.offlineRate || 0) || online;
+      if (editingId) {
+        await updateOffering(editingId, {
+          level: offering.level,
+          currency: offering.currency,
+          hourlyRate: online || offline,
+          onlineRate: online,
+          offlineRate: offline,
+          countryId: offering.countryId || '',
+          boardId: offering.boardId || '',
+          classLevelId: offering.classLevelId || '',
+        });
+        setMsg('Offering updated');
+        setModalOpen(false);
+        setEditingId('');
+        load();
+        return;
+      }
       await addOffering({
         subjectId: offering.subjectId,
         level: offering.level,
@@ -340,10 +404,29 @@ export default function TutorAvailability() {
     return [...map.values()];
   })();
 
+  const openEditOffering = (o) => {
+    setSaving(false);
+    setError('');
+    setEditingId(o._id);
+    setOffering({
+      subjectId: o.subjectId?._id || o.subjectId || '',
+      level: o.level || 'HL',
+      countryId: o.countryId?._id || o.countryId || '',
+      boardId: o.boardId?._id || o.boardId || '',
+      classLevelId: o.classLevelId?._id || o.classLevelId || '',
+      currency: o.currency || profile?.currency || 'USD',
+      onlineRate: o.onlineRate || o.hourlyRate || '',
+      offlineRate: o.offlineRate || '',
+    });
+    setModalOpen(true);
+  };
+
   const openAdd = () => {
     setSaving(false);
+    setEditingId('');
     if (tab === 'slots') {
-      const next = emptySlot(profile?.location, user?.timezone);
+      const next = emptySlot(profile?.location, region.timezone || user?.timezone);
+      next.countryId = region.countryId || next.countryId;
       if (modeFilter === 'online' || modeFilter === 'offline') next.deliveryMode = modeFilter;
       setSlot(next);
     }
@@ -358,11 +441,14 @@ export default function TutorAvailability() {
   return (
     <div className="page stack tutor-page">
       <ErpPageHeader
-        subtitle="Set the subjects and prices you offer, then open the times students can book."
+        subtitle="Set the subjects and prices you offer, then open the times students can book. Slots are stored in your country timezone so students see them in theirs and in Google Calendar."
         actions={
-          <ErpButton icon="plus" onClick={openAdd}>
-            {tab === 'offerings' ? 'Add offering' : 'Add slot'}
-          </ErpButton>
+          <>
+            <CalendarFeedButton />
+            <ErpButton icon="plus" onClick={openAdd}>
+              {tab === 'offerings' ? 'Add offering' : 'Add slot'}
+            </ErpButton>
+          </>
         }
       />
       {msg && (
@@ -412,6 +498,102 @@ export default function TutorAvailability() {
           tone="neutral"
         />
       </div>
+
+      <ErpCard size="sm" className="tutor-needbased">
+        <div className="tutor-region-grid">
+          <ErpSelect
+            label="Country"
+            value={region.countryId}
+            options={[
+              { value: '', label: 'Select country' },
+              ...countries.map((c) => ({ value: c._id, label: `${c.name} (${c.code})` })),
+            ]}
+            onChange={(e) => {
+              const countryId = e.target.value;
+              const country = countries.find((c) => c._id === countryId);
+              setRegion((r) => ({
+                ...r,
+                countryId,
+                timezone: country?.defaultTimezone || r.timezone,
+                currency: country?.currency || r.currency,
+              }));
+            }}
+          />
+          <ErpSelect
+            label="Time zone"
+            value={region.timezone}
+            options={timezoneOptions([
+              region.timezone,
+              user?.timezone,
+              browserTimezone(),
+              ...(countries.find((c) => c._id === region.countryId)?.timezones || []),
+            ])}
+            onChange={(e) => setRegion((r) => ({ ...r, timezone: e.target.value }))}
+          />
+          <ErpSelect
+            label="Listing currency"
+            value={region.currency}
+            options={currencyOptions}
+            onChange={(e) => setRegion((r) => ({ ...r, currency: e.target.value }))}
+          />
+          <div className="tutor-region-save">
+            <ErpButton
+              size="sm"
+              loading={regionBusy}
+              onClick={async () => {
+                setError('');
+                setMsg('');
+                setRegionBusy(true);
+                try {
+                  const country = countries.find((c) => c._id === region.countryId);
+                  await updateMe({
+                    countryId: region.countryId || '',
+                    country: country?.name || '',
+                    timezone: region.timezone,
+                    preferredCurrency: region.currency,
+                    currency: region.currency,
+                  });
+                  await refresh?.();
+                  setMsg('Country, time zone and currency saved. New slots use this zone.');
+                } catch (err) {
+                  setError(errorMessage(err));
+                } finally {
+                  setRegionBusy(false);
+                }
+              }}
+            >
+              Save region
+            </ErpButton>
+          </div>
+        </div>
+      </ErpCard>
+
+      <ErpCard size="sm" className="tutor-needbased">
+        <div className="tutor-needbased-row">
+          <span className="erp-attention-icon is-brand" aria-hidden="true">
+            <Icon name="repeat" size={16} />
+          </span>
+          <span className="tutor-needbased-text">
+            <strong id="tutor-needbased-label">Need-based / one-off classes</strong>
+            <span className="muted">
+              {needBased
+                ? 'On: students can book single classes with you as they need them.'
+                : 'Off: only regular or subscription students can book you.'}
+            </span>
+          </span>
+          <label className="tutor-switch">
+            <input
+              type="checkbox"
+              role="switch"
+              aria-labelledby="tutor-needbased-label"
+              checked={needBased}
+              disabled={needBusy}
+              onChange={toggleNeedBased}
+            />
+            <span className="tutor-switch-track" aria-hidden="true" />
+          </label>
+        </div>
+      </ErpCard>
 
       <ErpTabs
         value={tab}
@@ -505,14 +687,24 @@ export default function TutorAvailability() {
                       </span>
                     </span>
                   </span>
-                  <ErpButton
-                    variant="ghost"
-                    size="sm"
-                    iconOnly
-                    icon="trash"
-                    aria-label={`Remove ${o.subjectId?.name || 'offering'}`}
-                    onClick={() => setPendingDelete({ kind: 'offering', item: o })}
-                  />
+                  <span className="tutor-row-actions">
+                    <ErpButton
+                      variant="ghost"
+                      size="sm"
+                      iconOnly
+                      icon="pencil"
+                      aria-label={`Edit ${o.subjectId?.name || 'offering'}`}
+                      onClick={() => openEditOffering(o)}
+                    />
+                    <ErpButton
+                      variant="ghost"
+                      size="sm"
+                      iconOnly
+                      icon="trash"
+                      aria-label={`Remove ${o.subjectId?.name || 'offering'}`}
+                      onClick={() => setPendingDelete({ kind: 'offering', item: o })}
+                    />
+                  </span>
                 </li>
               ))}
             </ul>
@@ -546,6 +738,14 @@ export default function TutorAvailability() {
                       <td className="num">{rateText(o).online}</td>
                       <td className="num">{rateText(o).offline}</td>
                       <td className="tutor-cell-actions">
+                        <ErpButton
+                          variant="ghost"
+                          size="sm"
+                          iconOnly
+                          icon="pencil"
+                          aria-label={`Edit ${o.subjectId?.name || 'offering'}`}
+                          onClick={() => openEditOffering(o)}
+                        />
                         <ErpButton
                           variant="ghost"
                           size="sm"
@@ -677,7 +877,7 @@ export default function TutorAvailability() {
 
       <ErpModal
         open={modalOpen && tab === 'offerings'}
-        title="Add offering"
+        title={editingId ? 'Edit offering' : 'Add offering'}
         onClose={() => !saving && setModalOpen(false)}
         footer={
           <>
@@ -685,7 +885,7 @@ export default function TutorAvailability() {
               Cancel
             </ErpButton>
             <ErpButton type="submit" form="tutor-offering-form" loading={saving}>
-              Save offering
+              {editingId ? 'Save changes' : 'Save offering'}
             </ErpButton>
           </>
         }
@@ -697,6 +897,8 @@ export default function TutorAvailability() {
               <ErpSelect
                 label="Subject"
                 value={offering.subjectId}
+                disabled={Boolean(editingId)}
+                helper={editingId ? 'To teach another subject, add a new offering.' : undefined}
                 options={
                   subjects.length ? subjectOptions(subjects) : [{ value: '', label: 'No subjects', disabled: true }]
                 }

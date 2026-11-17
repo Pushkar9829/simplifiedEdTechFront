@@ -19,6 +19,7 @@ import {
   ErpTabs,
   Icon,
 } from '../../components/erp';
+import CurrencyChip from '../../components/CurrencyChip';
 import { money, tutorRef } from '../../utils/format';
 import { gradeLabel } from '../../utils/grading';
 import { useAuth } from '../../context/AuthContext';
@@ -393,6 +394,7 @@ export default function ParentDashboard() {
         subtitle={heroSub}
         actions={
           <>
+            <CurrencyChip to="/parent/profile" />
             <Link to="/parent/children/link" className="erp-btn-secondary">
               <Icon name="plus" size={16} />
               Link child

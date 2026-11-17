@@ -913,10 +913,25 @@ function sameDay(a, b) {
   );
 }
 
+/** Calendar day (as a local midnight Date) of `value` seen in `timeZone`; falls back to local time. */
+function calendarDayIn(value, timeZone) {
+  const d = new Date(value);
+  if (!timeZone || Number.isNaN(d.getTime())) return startOfDay(d);
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' })
+      .formatToParts(d)
+      .reduce((acc, p) => ({ ...acc, [p.type]: Number(p.value) }), {});
+    return new Date(parts.year, parts.month - 1, parts.day);
+  } catch {
+    return startOfDay(d);
+  }
+}
+
 /**
- * Month / week calendar. `events` items need { id, start, title, variant }.
+ * Month / week calendar. `events` items need { id, start, title, variant }; optional `tooltip`.
  * `onRangeChange(from, to)` fires when the visible range changes.
- * Optional: controlled `date` + `onDateChange`, `loading`, `emptyMessage` (shown when no events).
+ * Optional: controlled `date` + `onDateChange`, `loading`, `emptyMessage` (shown when no events),
+ * `timeZone` (IANA) — days, "today" and times are shown in that zone instead of the browser's.
  */
 export function ErpCalendar({
   events = [],
@@ -927,9 +942,10 @@ export function ErpCalendar({
   onDateChange,
   loading = false,
   emptyMessage = '',
+  timeZone,
 }) {
   const [view, setView] = useState(initialView);
-  const [innerCursor, setInnerCursor] = useState(() => startOfDay(date || new Date()));
+  const [innerCursor, setInnerCursor] = useState(() => (date ? startOfDay(date) : calendarDayIn(new Date(), timeZone)));
   const cursor = date ? startOfDay(date) : innerCursor;
   const setCursor = (next) => {
     if (onDateChange) onDateChange(next);
@@ -953,7 +969,9 @@ export function ErpCalendar({
 
   const rangeKey = `${days[0].toISOString()}|${days[days.length - 1].toISOString()}`;
   useEffect(() => {
-    onRangeRef.current?.(days[0], addDays(days[days.length - 1], 1));
+    // In another zone a grid day can start up to ~14 h earlier/later than local midnight: pad the range.
+    const pad = timeZone ? 1 : 0;
+    onRangeRef.current?.(addDays(days[0], -pad), addDays(days[days.length - 1], 1 + pad));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rangeKey]);
 
@@ -967,7 +985,14 @@ export function ErpCalendar({
     setCursor(next);
   };
 
-  const today = new Date();
+  const today = calendarDayIn(new Date(), timeZone);
+  const timeLabel = (value) => {
+    try {
+      return new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: timeZone || undefined });
+    } catch {
+      return new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    }
+  };
   const label =
     view === 'week'
       ? `${days[0].toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${days[6].toLocaleDateString(
@@ -980,7 +1005,7 @@ export function ErpCalendar({
     <div className={`erp-calendar${view === 'week' ? ' erp-calendar-week' : ''}`}>
       <div className="erp-calendar-head">
         <div className="row">
-          <ErpButton variant="secondary" size="sm" onClick={() => setCursor(startOfDay(new Date()))}>
+          <ErpButton variant="secondary" size="sm" onClick={() => setCursor(calendarDayIn(new Date(), timeZone))}>
             Today
           </ErpButton>
           <ErpButton
@@ -1027,7 +1052,7 @@ export function ErpCalendar({
         ))}
         {days.map((day) => {
           const dayEvents = events
-            .filter((e) => sameDay(new Date(e.start), day))
+            .filter((e) => sameDay(calendarDayIn(e.start, timeZone), day))
             .sort((a, b) => new Date(a.start) - new Date(b.start));
           const muted = view === 'month' && day.getMonth() !== cursor.getMonth();
           return (
@@ -1043,11 +1068,10 @@ export function ErpCalendar({
                   key={e.id}
                   type="button"
                   className={`erp-calendar-event${e.variant ? ` erp-calendar-event-${e.variant}` : ''}`}
-                  title={e.title}
+                  title={e.tooltip || e.title}
                   onClick={() => onEventClick?.(e)}
                 >
-                  {new Date(e.start).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}{' '}
-                  {e.title}
+                  {timeLabel(e.start)} {e.title}
                 </button>
               ))}
             </div>

@@ -1,0 +1,267 @@
+/* Bookings: class code card, code entry, booking event modal, calendar feed panel.
+   Only --erp-* tokens are used so the Bento (student) and Scholar Indigo themes both restyle it. */
+
+/* ── Class code card (student / parent) ─────────────────────────── */
+.bk-code-card {
+  position: relative;
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.1rem 1.1rem 1rem;
+  border-radius: var(--erp-radius-lg);
+  background: linear-gradient(160deg, var(--erp-accent-muted), var(--erp-surface) 70%);
+  border: 1px solid var(--erp-border);
+  color: var(--erp-text-primary);
+  min-width: 0;
+}
+.bk-code-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.bk-code-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--erp-font-xs, 12px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--erp-accent);
+}
+.bk-code-title {
+  margin: 0;
+  font-weight: 650;
+  font-size: var(--erp-font-md, 16px);
+  overflow-wrap: anywhere;
+}
+.bk-code-sub {
+  margin: 0;
+  color: var(--erp-text-muted);
+  font-size: var(--erp-font-sm, 13px);
+  overflow-wrap: anywhere;
+}
+.bk-code-digits {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: clamp(0.3rem, 1.6vw, 0.6rem);
+  max-width: 26rem;
+}
+.bk-code-digits span {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 5;
+  border-radius: var(--erp-radius-md);
+  background: var(--erp-surface);
+  border: 1px solid var(--erp-border);
+  box-shadow: 0 1px 0 var(--erp-border);
+  font-size: clamp(1.6rem, 8.5vw, 2.4rem);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  color: var(--erp-text-primary);
+  line-height: 1;
+}
+.bk-code-digits.is-placeholder span {
+  color: var(--erp-text-faint);
+}
+.bk-code-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.bk-code-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--erp-font-sm, 13px);
+  color: var(--erp-text-secondary);
+}
+.bk-code-timer.is-warn {
+  color: var(--erp-warning-text);
+}
+.bk-code-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.bk-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: var(--erp-font-xs, 12px);
+  font-weight: 600;
+  background: var(--erp-surface);
+  border: 1px solid var(--erp-border);
+  color: var(--erp-text-muted);
+}
+.bk-step.is-done {
+  background: var(--erp-success-bg);
+  border-color: var(--erp-success-border);
+  color: var(--erp-success-text);
+}
+.bk-step.is-now {
+  border-color: var(--erp-accent);
+  color: var(--erp-accent);
+}
+.bk-code-state {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--erp-radius-md);
+  background: var(--erp-surface);
+  border: 1px dashed var(--erp-border-strong, var(--erp-border));
+  color: var(--erp-text-secondary);
+  font-size: var(--erp-font-sm, 13px);
+}
+
+/* ── Code entry (tutor) ─────────────────────────────────────────── */
+.bk-otp {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 3.1rem));
+  gap: 0.45rem;
+  justify-content: center;
+}
+.bk-otp input {
+  width: 100%;
+  height: 3.4rem;
+  min-width: 0;
+  text-align: center;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border-radius: var(--erp-radius-md);
+  border: 1px solid var(--erp-border-strong, var(--erp-border));
+  background: var(--erp-input-bg, var(--erp-surface));
+  color: var(--erp-text-primary);
+}
+.bk-otp input:focus {
+  outline: 2px solid var(--erp-accent);
+  outline-offset: 1px;
+  border-color: var(--erp-accent);
+}
+.bk-otp.is-error input {
+  border-color: var(--erp-danger-text);
+}
+
+/* ── Proof chips ───────────────────────────────────────────────── */
+.bk-proof {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+/* ── Event modal ───────────────────────────────────────────────── */
+.bk-event-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+.bk-event-when {
+  display: grid;
+  gap: 0.15rem;
+}
+.bk-event-when strong {
+  font-size: var(--erp-font-md, 16px);
+}
+.bk-event-grid {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, max-content) minmax(0, 1fr);
+  gap: 0.45rem 1rem;
+  margin: 0;
+}
+.bk-event-grid dt {
+  color: var(--erp-text-muted);
+  font-size: var(--erp-font-sm, 13px);
+}
+.bk-event-grid dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bk-cal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.bk-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+@media (max-width: 480px) {
+  .bk-event-grid {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
+  .bk-event-grid dd {
+    margin-bottom: 0.45rem;
+  }
+  .bk-modal-actions > * {
+    flex: 1 1 auto;
+  }
+  .bk-cal-actions > * {
+    flex: 1 1 100%;
+  }
+}
+
+/* ── Calendar feed panel ───────────────────────────────────────── */
+.bk-feed {
+  display: grid;
+  gap: 0.75rem;
+}
+.bk-feed-url {
+  display: flex;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.bk-feed-url input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--erp-font-xs, 12px);
+}
+@media (max-width: 480px) {
+  .bk-feed-url {
+    flex-direction: column;
+  }
+}
+
+/* ── Class links editor (tutor drawer) ─────────────────────────── */
+.bk-links-form {
+  display: grid;
+  gap: 0.75rem;
+}
+.bk-links-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+@media (max-width: 560px) {
+  .bk-links-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Calendar chip colours by status (extra variants for ErpCalendar) ── */
+.erp-calendar-event.erp-calendar-event-rescheduled {
+  border-left-color: var(--erp-warning-text);
+  background: var(--erp-warning-bg);
+}
+.erp-calendar-event.erp-calendar-event-missing {
+  border-left-color: var(--erp-danger-text);
+  background: var(--erp-danger-bg);
+}
+.erp-calendar-event.erp-calendar-event-pending {
+  border-left-color: var(--erp-text-faint);
+  background: var(--erp-surface-muted);
+}

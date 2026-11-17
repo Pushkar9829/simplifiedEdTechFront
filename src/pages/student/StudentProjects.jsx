@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  addFavorite,
+  addFavoriteFor,
   joinProject,
+  listCountries,
   listOpenProjects,
   listProjects,
   listSubjects,
-  removeFavorite,
+  removeFavoriteFor,
   setProjectStatus,
 } from '../../api';
 import {
+  ErpBadge,
   ErpBanner,
   ErpButton,
   ErpCard,
@@ -25,9 +27,11 @@ import {
   Icon,
 } from '../../components/erp';
 import { childLabel, useParentChild } from '../../context/ParentChildContext';
+import { useCatalog } from '../../context/CatalogContext';
 import { useAuth } from '../../context/AuthContext';
 import { useListFilter } from '../../hooks/useListFilter';
 import { money, tutorRef } from '../../utils/format';
+import { useDisplayMoney } from '../../utils/displayMoney';
 import { errorMessage } from '../../utils/errors';
 import { mediaUrl } from '../../utils/mediaUrl';
 import { titleCase } from './studentOptions';
@@ -47,7 +51,10 @@ export default function StudentProjects() {
   const navigate = useNavigate();
   const isParent = location.pathname.startsWith('/parent');
   const paymentsPath = isParent ? '/parent/payments' : '/student/payments';
+  const messagesPath = isParent ? '/parent/messages' : '/student/messages';
   const { user } = useAuth();
+  const { options } = useCatalog();
+  const fmtMoney = useDisplayMoney();
   const zone = viewerZone(user);
   const parent = useParentChild();
   const childId = isParent ? parent.selectedChildId : null;
@@ -56,7 +63,19 @@ export default function StudentProjects() {
   const [allItems, setAllItems] = useState([]);
   const [openItems, setOpenItems] = useState([]);
   const [subjects, setSubjects] = useState([]);
-  const [filters, setFilters] = useState({ subjectId: '', paid: '', favorites: '' });
+  const [filters, setFilters] = useState({
+    subjectId: '',
+    paid: '',
+    favorites: '',
+    kind: '',
+    category: '',
+    minPrice: '',
+    maxPrice: '',
+    dueBefore: '',
+    countryId: '',
+    sort: '',
+  });
+  const [priceDraft, setPriceDraft] = useState({ minPrice: '', maxPrice: '' });
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
@@ -65,6 +84,7 @@ export default function StudentProjects() {
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [busyId, setBusyId] = useState('');
+  const [countries, setCountries] = useState([]);
 
   const begin = () => {
     setError('');
@@ -80,14 +100,22 @@ export default function StudentProjects() {
     }
   };
 
-  const loadOpen = () =>
-    listOpenProjects({ ...filters, search: query })
+  const loadOpen = () => {
+    const params = { ...filters, search: query, ...(childId ? { studentUserId: childId } : {}) };
+    Object.keys(params).forEach((k) => {
+      if (params[k] === '' || params[k] == null) delete params[k];
+    });
+    return listOpenProjects(params)
       .then((r) => setOpenItems(Array.isArray(r) ? r : r?.items || []))
       .catch((err) => setError(errorMessage(err)));
+  };
 
   useEffect(() => {
     listSubjects()
       .then((d) => setSubjects(d.items || []))
+      .catch(() => {});
+    listCountries()
+      .then((c) => setCountries(Array.isArray(c) ? c : c?.items || []))
       .catch(() => {});
     load();
   }, []);
@@ -98,8 +126,16 @@ export default function StudentProjects() {
   }, [search]);
 
   useEffect(() => {
+    const t = setTimeout(
+      () => setFilters((f) => ({ ...f, minPrice: priceDraft.minPrice, maxPrice: priceDraft.maxPrice })),
+      450
+    );
+    return () => clearTimeout(t);
+  }, [priceDraft.minPrice, priceDraft.maxPrice]);
+
+  useEffect(() => {
     if (section === 'join') loadOpen();
-  }, [section, query, filters.subjectId, filters.paid, filters.favorites]);
+  }, [section, query, JSON.stringify(filters), childId]);
 
   const items = useMemo(
     () => (isParent ? allItems.filter((p) => idOf(p.studentUserId) === String(childId || '')) : allItems),
@@ -206,7 +242,7 @@ export default function StudentProjects() {
         onChange={setSection}
         tabs={[
           { value: 'mine', label: isParent ? 'Projects' : 'My projects', count: items.length },
-          { value: 'join', label: 'Open projects' },
+          { value: 'join', label: 'Join projects' },
         ]}
       />
 
@@ -237,7 +273,7 @@ export default function StudentProjects() {
                 description="Tutors can propose guided project work, or you can join an open project."
                 action={
                   <ErpButton variant="secondary" onClick={() => setSection('join')}>
-                    Browse open projects
+                    Join projects
                   </ErpButton>
                 }
               />
@@ -255,9 +291,20 @@ export default function StudentProjects() {
                     <div className="st-item-body">
                       <p className="st-item-title">{p.name}</p>
                       <p className="st-item-meta">
-                        <span>
+                        <span className="st-guide-line">
                           <Icon name="user" size={14} />
-                          {tutorRef(p.tutorUserId)}
+                          Guidance tutor {tutorRef(p.tutorUserId)}
+                          {idOf(p.tutorUserId) ? (
+                            <LinkButton
+                              to={`${messagesPath}?with=${idOf(p.tutorUserId)}`}
+                              variant="ghost"
+                              size="sm"
+                              icon="message-square"
+                              aria-label={`Message guidance tutor ${tutorRef(p.tutorUserId)}`}
+                            >
+                              Message
+                            </LinkButton>
+                          ) : null}
                         </span>
                         <span>
                           <Icon name="tag" size={14} />
@@ -370,10 +417,35 @@ export default function StudentProjects() {
             <ErpSearch value={search} onChange={setSearch} placeholder="Search title or tutor ID" />
             <ErpSelect
               inline
+              aria-label="Class type"
+              value={filters.category || 'all'}
+              options={options('subject_category', { all: 'All classes', allValue: 'all' })}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, category: e.target.value === 'all' ? '' : e.target.value, subjectId: '' }))
+              }
+            />
+            <ErpSelect
+              inline
               aria-label="Subject"
               value={filters.subjectId}
-              options={[{ value: '', label: 'All subjects' }, ...subjects.map((s) => ({ value: s._id, label: s.name }))]}
+              options={[
+                { value: '', label: 'All subjects' },
+                ...subjects
+                  .filter((s) => !filters.category || (s.category || 'ibdp') === filters.category)
+                  .map((s) => ({ value: s._id, label: s.name })),
+              ]}
               onChange={(e) => setFilters((f) => ({ ...f, subjectId: e.target.value }))}
+            />
+            <ErpSelect
+              inline
+              aria-label="Type"
+              value={filters.kind}
+              options={[
+                { value: '', label: 'Any type' },
+                { value: 'project', label: 'Projects' },
+                { value: 'assignment', label: 'Assignments' },
+              ]}
+              onChange={(e) => setFilters((f) => ({ ...f, kind: e.target.value }))}
             />
             <ErpSelect
               inline
@@ -399,6 +471,60 @@ export default function StudentProjects() {
               {childSelect}
             </div>
           </div>
+          <div className="st-join-filters" role="group" aria-label="More project filters">
+            <ErpSelect
+              inline
+              aria-label="Country"
+              leading={<Icon name="globe" size={15} />}
+              value={filters.countryId}
+              options={[
+                { value: '', label: 'Any country' },
+                ...countries.map((ct) => ({ value: ct._id, label: ct.name })),
+              ]}
+              onChange={(e) => setFilters((f) => ({ ...f, countryId: e.target.value }))}
+            />
+            <input
+              className="erp-input st-mini-input"
+              type="number"
+              min="0"
+              inputMode="decimal"
+              aria-label="Minimum fee"
+              placeholder="Min fee"
+              value={priceDraft.minPrice}
+              onChange={(e) => setPriceDraft((d) => ({ ...d, minPrice: e.target.value }))}
+            />
+            <input
+              className="erp-input st-mini-input"
+              type="number"
+              min="0"
+              inputMode="decimal"
+              aria-label="Maximum fee"
+              placeholder="Max fee"
+              value={priceDraft.maxPrice}
+              onChange={(e) => setPriceDraft((d) => ({ ...d, maxPrice: e.target.value }))}
+            />
+            <input
+              className="erp-input st-date-input"
+              type="date"
+              aria-label="Due on or before"
+              title="Due on or before"
+              value={filters.dueBefore}
+              onChange={(e) => setFilters((f) => ({ ...f, dueBefore: e.target.value }))}
+            />
+            <ErpSelect
+              inline
+              aria-label="Sort"
+              leading={<Icon name="list-checks" size={15} />}
+              value={filters.sort}
+              options={[
+                { value: '', label: 'Due soonest' },
+                { value: 'newest', label: 'Newest' },
+                { value: 'price_asc', label: 'Fee: low to high' },
+                { value: 'price_desc', label: 'Fee: high to low' },
+              ]}
+              onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}
+            />
+          </div>
           {isParent && !childId && <ErpBanner variant="info">Select a child to join a project for them.</ErpBanner>}
           {!openItems.length ? (
             <div className="erp-card">
@@ -421,6 +547,7 @@ export default function StudentProjects() {
                         <h3 className="st-resource-title">{p.name}</h3>
                         <p className="st-item-meta" style={{ marginTop: '0.25rem' }}>
                           <span>{p.subjectId?.name || 'Subject'}</span>
+                          {p.kind === 'assignment' ? <span>Assignment</span> : null}
                           <span>Due {formatDay(p.deliveryDate, zone)}</span>
                         </p>
                       </div>
@@ -429,8 +556,8 @@ export default function StudentProjects() {
                         onClick={async () => {
                           begin();
                           try {
-                            if (p.favorite) await removeFavorite('project', p._id);
-                            else await addFavorite('project', p._id);
+                            if (p.favorite) await removeFavoriteFor('project', p._id, childId);
+                            else await addFavoriteFor('project', p._id, childId);
                             loadOpen();
                           } catch (err) {
                             setError(errorMessage(err));
@@ -450,13 +577,26 @@ export default function StudentProjects() {
                     <span className="st-price-value">
                       {Number(p.price) > 0 ? (
                         <>
-                          {money(p.price, p.currency)}
+                          {fmtMoney(p.price, p.currency).primary}
                           <small> tutor fee</small>
+                          {fmtMoney(p.price, p.currency).approx ? (
+                            <span className="erp-price-approx">{fmtMoney(p.price, p.currency).approx}</span>
+                          ) : null}
                         </>
                       ) : (
                         'Free'
                       )}
                     </span>
+                    {p.joined ? (
+                      <span className="st-joined-chip">
+                        <ErpBadge tone="success" icon="check">
+                          Joined
+                        </ErpBadge>
+                        <ErpButton size="sm" variant="ghost" onClick={() => setSection('mine')}>
+                          View
+                        </ErpButton>
+                      </span>
+                    ) : (
                     <ErpButton
                       size="sm"
                       disabled={Boolean(busyId) || (isParent && !childId)}
@@ -484,6 +624,7 @@ export default function StudentProjects() {
                     >
                       {busyId === p._id ? 'Joining…' : Number(p.price) > 0 ? 'Join & pay' : 'Join'}
                     </ErpButton>
+                    )}
                   </div>
                 </article>
               ))}

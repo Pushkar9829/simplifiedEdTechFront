@@ -1,9 +1,10 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { homePathFor, pathBelongsToRole, useAuth } from '../../context/AuthContext';
 import { ErpButton, ErpThemePicker } from '../../components/erp';
 import { Icon } from '../../components/Icon';
 import { errorMessage } from '../../utils/errors';
+import { getAuthConfig } from '../../api';
 import './LoginPage.css';
 
 const ROLES = [
@@ -55,8 +56,75 @@ function Banner({ tone, icon, children, role }) {
   );
 }
 
+const GIS_SRC = 'https://accounts.google.com/gsi/client';
+let gisPromise = null;
+
+function loadGis() {
+  if (window.google?.accounts?.id) return Promise.resolve(window.google);
+  if (!gisPromise) {
+    gisPromise = new Promise((resolve, reject) => {
+      const el = document.createElement('script');
+      el.src = GIS_SRC;
+      el.async = true;
+      el.defer = true;
+      el.onload = () => resolve(window.google);
+      el.onerror = () => {
+        gisPromise = null;
+        reject(new Error('Could not load Google sign-in'));
+      };
+      document.head.appendChild(el);
+    });
+  }
+  return gisPromise;
+}
+
+/** Google Identity Services button; hands the signed ID token (credential) to onCredential. */
+function GoogleSignInButton({ clientId, onCredential, onError, disabled }) {
+  const ref = useRef(null);
+  const cb = useRef(onCredential);
+  const errCb = useRef(onError);
+  useEffect(() => {
+    cb.current = onCredential;
+    errCb.current = onError;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    loadGis()
+      .then((google) => {
+        if (cancelled || !ref.current || !google?.accounts?.id) return;
+        google.accounts.id.initialize({
+          client_id: clientId,
+          callback: (res) => res?.credential && cb.current(res.credential),
+          ux_mode: 'popup',
+        });
+        ref.current.innerHTML = '';
+        google.accounts.id.renderButton(ref.current, {
+          theme: 'outline',
+          size: 'large',
+          text: 'continue_with',
+          shape: 'pill',
+          width: Math.min(400, ref.current.offsetWidth || 320),
+        });
+      })
+      .catch((e) => errCb.current?.(e));
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
+
+  return (
+    <div
+      ref={ref}
+      className={`login-gis${disabled ? ' is-disabled' : ''}`}
+      aria-label="Continue with Google"
+      aria-busy={disabled || undefined}
+    />
+  );
+}
+
 export default function LoginPage() {
-  const { user, loading, sendOtp, login, loginGoogle } = useAuth();
+  const { user, loading, sendOtp, login, loginGoogle, loginGoogleToken } = useAuth();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const reason = searchParams.get('reason') || '';
@@ -72,6 +140,21 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [googleOpen, setGoogleOpen] = useState(false);
   const [googleEmail, setGoogleEmail] = useState('');
+  // null until /auth/config answers; Google UI stays hidden until then (and when disabled).
+  const [googleCfg, setGoogleCfg] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    getAuthConfig()
+      .then((cfg) => alive && setGoogleCfg(cfg || { googleEnabled: false }))
+      .catch(() => alive && setGoogleCfg({ googleEnabled: false }));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const googleReal = Boolean(googleCfg?.googleEnabled && googleCfg?.googleClientId);
+  const googleDemo = Boolean(googleCfg?.googleEnabled && googleCfg?.demo && !googleCfg?.googleClientId);
 
   const phoneValid = PHONE_RE.test(cleanPhone(phone));
   const phoneError =
@@ -125,6 +208,19 @@ export default function LoginPage() {
     setBusy(true);
     try {
       await login({ phone: cleanPhone(phone), otp, role, name });
+      setHint('');
+    } catch (err) {
+      handleError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onGoogleCredential = async (credential) => {
+    setError('');
+    setBusy(true);
+    try {
+      await loginGoogleToken({ credential, role, name });
       setHint('');
     } catch (err) {
       handleError(err);
@@ -286,11 +382,20 @@ export default function LoginPage() {
                 </ErpButton>
               </form>
 
-              <div className="login-divider" role="separator">
-                <span>or</span>
-              </div>
+              {googleReal || googleDemo ? (
+                <div className="login-divider" role="separator">
+                  <span>or</span>
+                </div>
+              ) : null}
 
-              {googleOpen ? (
+              {googleReal ? (
+                <GoogleSignInButton
+                  clientId={googleCfg.googleClientId}
+                  onCredential={onGoogleCredential}
+                  onError={(err) => setError(errorMessage(err))}
+                  disabled={busy}
+                />
+              ) : !googleDemo ? null : googleOpen ? (
                 <form onSubmit={onGoogle} className="login-google-form">
                   <div className="field">
                     <label className="erp-label" htmlFor={`${ids}-gmail`}>
@@ -395,8 +500,10 @@ export default function LoginPage() {
 
           <div className="demo-hint muted">
             <strong>Demo:</strong> OTP is always 123456 — student 7777777777 · tutor 8888888888 ·
-            parent 6666666666 · admin 9999999999. Google demo: student@ibdp.demo, tutor@ibdp.demo,
-            parent@ibdp.demo, admin@ibdp.demo.
+            parent 6666666666 · admin 9999999999.
+            {googleDemo
+              ? ' Google demo: student@ibdp.demo, tutor@ibdp.demo, parent@ibdp.demo, admin@ibdp.demo.'
+              : ''}
           </div>
         </div>
       </main>

@@ -499,3 +499,135 @@
     flex: 1 1 calc(100% - 3rem);
   }
 }
+
+/* ---- Profile media (upload or link) ---- */
+.sp-media-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.sp-media-preview {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 88px;
+  height: 88px;
+  overflow: hidden;
+  border: 1px dashed var(--erp-border);
+  border-radius: var(--erp-radius-lg);
+  background: var(--erp-surface-muted, var(--erp-surface));
+  color: var(--erp-text-muted);
+}
+
+.sp-media-preview.is-round {
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.sp-media-preview.is-round .erp-avatar {
+  width: 88px;
+  height: 88px;
+  font-size: 1.5rem;
+}
+
+.sp-media-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sp-media-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.sp-media-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sp-media-btn {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.sp-media-btn input[type='file'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.sp-media-btn:focus-within {
+  box-shadow: var(--erp-focus-ring);
+}
+
+.sp-media-btn.is-busy {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.sp-media-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: var(--erp-font-sm);
+  color: var(--erp-accent);
+  text-decoration: none;
+}
+
+.sp-media-open:hover {
+  text-decoration: underline;
+}
+
+.sp-media-error {
+  font-size: var(--erp-font-sm);
+  color: var(--erp-danger, #b42318);
+}
+
+/* ---- Tutor profile links ---- */
+.sp-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.sp-link-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.sp-block-list .erp-avatar {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 560px) {
+  .sp-media-row {
+    flex-direction: column;
+  }
+
+  .sp-link-row {
+    grid-template-columns: minmax(0, 1fr);
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--erp-divider);
+  }
+
+  .sp-link-row > button {
+    justify-self: start;
+  }
+}

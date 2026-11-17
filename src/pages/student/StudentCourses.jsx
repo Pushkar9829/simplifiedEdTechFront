@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { addFavorite, enrollCourse, listCourses, listMyEnrollments, listSubjects, removeFavorite } from '../../api';
+import {
+  addFavoriteFor,
+  enrollCourse,
+  listCountries,
+  listCourses,
+  listMyEnrollments,
+  listSubjects,
+  removeFavoriteFor,
+} from '../../api';
 import {
   ErpBadge,
   ErpBanner,
@@ -21,6 +29,7 @@ import { useCatalog } from '../../context/CatalogContext';
 import { childLabel, useParentChild } from '../../context/ParentChildContext';
 import { useListFilter } from '../../hooks/useListFilter';
 import { money, tutorRef } from '../../utils/format';
+import { useDisplayMoney } from '../../utils/displayMoney';
 import { errorMessage } from '../../utils/errors';
 import { titleCase } from './studentOptions';
 import { idOf } from './studentTime';
@@ -40,7 +49,20 @@ export default function StudentCourses() {
   const [enrollments, setEnrollments] = useState([]);
   const [catalog, setCatalog] = useState([]);
   const [subjects, setSubjects] = useState([]);
-  const [filters, setFilters] = useState({ subjectId: '', category: '', level: '', paid: '', favorites: '' });
+  const [filters, setFilters] = useState({
+    subjectId: '',
+    category: '',
+    level: '',
+    paid: '',
+    favorites: '',
+    countryId: '',
+    minPrice: '',
+    maxPrice: '',
+    sort: '',
+  });
+  const [priceDraft, setPriceDraft] = useState({ minPrice: '', maxPrice: '' });
+  const [countries, setCountries] = useState([]);
+  const fmtMoney = useDisplayMoney();
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
@@ -61,7 +83,11 @@ export default function StudentCourses() {
 
   const loadJoin = () => {
     setLoadingJoin(true);
-    return listCourses({ ...filters, search: query })
+    const params = { ...filters, search: query, ...(childId ? { studentUserId: childId } : {}) };
+    Object.keys(params).forEach((k) => {
+      if (params[k] === '' || params[k] == null) delete params[k];
+    });
+    return listCourses(params)
       .then((r) => setCatalog(Array.isArray(r) ? r : r?.items || []))
       .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoadingJoin(false));
@@ -70,6 +96,9 @@ export default function StudentCourses() {
   useEffect(() => {
     listSubjects()
       .then((d) => setSubjects(d.items || []))
+      .catch(() => {});
+    listCountries()
+      .then((c) => setCountries(Array.isArray(c) ? c : c?.items || []))
       .catch(() => {});
     loadMine();
   }, []);
@@ -80,8 +109,16 @@ export default function StudentCourses() {
   }, [search]);
 
   useEffect(() => {
+    const t = setTimeout(
+      () => setFilters((f) => ({ ...f, minPrice: priceDraft.minPrice, maxPrice: priceDraft.maxPrice })),
+      450
+    );
+    return () => clearTimeout(t);
+  }, [priceDraft.minPrice, priceDraft.maxPrice]);
+
+  useEffect(() => {
     if (section === 'join') loadJoin();
-  }, [section, query, filters.subjectId, filters.category, filters.level, filters.paid, filters.favorites]);
+  }, [section, query, JSON.stringify(filters), childId]);
 
   // Enrollments for the learner in view (the selected child for parents).
   const items = useMemo(
@@ -177,7 +214,7 @@ export default function StudentCourses() {
         actions={
           section === 'mine' ? (
             <ErpButton icon="search" onClick={() => setSection('join')}>
-              Browse courses
+              Join courses
             </ErpButton>
           ) : null
         }
@@ -208,7 +245,7 @@ export default function StudentCourses() {
         onChange={setSection}
         tabs={[
           { value: 'mine', label: isParent ? 'Enrolled courses' : 'My courses', count: items.length },
-          { value: 'join', label: 'Browse catalogue' },
+          { value: 'join', label: 'Join courses' },
         ]}
       />
 
@@ -238,7 +275,7 @@ export default function StudentCourses() {
                 description="Browse self-paced courses published by verified tutors."
                 action={
                   <ErpButton variant="secondary" onClick={() => setSection('join')}>
-                    Browse courses
+                    Join courses
                   </ErpButton>
                 }
               />
@@ -350,6 +387,52 @@ export default function StudentCourses() {
               {childSelect}
             </div>
           </div>
+          <div className="st-join-filters" role="group" aria-label="More course filters">
+            <ErpSelect
+              inline
+              aria-label="Country"
+              leading={<Icon name="globe" size={15} />}
+              value={filters.countryId}
+              options={[
+                { value: '', label: 'Any country' },
+                ...countries.map((ct) => ({ value: ct._id, label: ct.name })),
+              ]}
+              onChange={(e) => setFilters((f) => ({ ...f, countryId: e.target.value }))}
+            />
+            <input
+              className="erp-input st-mini-input"
+              type="number"
+              min="0"
+              inputMode="decimal"
+              aria-label="Minimum price"
+              placeholder="Min price"
+              value={priceDraft.minPrice}
+              onChange={(e) => setPriceDraft((d) => ({ ...d, minPrice: e.target.value }))}
+            />
+            <input
+              className="erp-input st-mini-input"
+              type="number"
+              min="0"
+              inputMode="decimal"
+              aria-label="Maximum price"
+              placeholder="Max price"
+              value={priceDraft.maxPrice}
+              onChange={(e) => setPriceDraft((d) => ({ ...d, maxPrice: e.target.value }))}
+            />
+            <ErpSelect
+              inline
+              aria-label="Sort"
+              leading={<Icon name="list-checks" size={15} />}
+              value={filters.sort}
+              options={[
+                { value: '', label: 'Recently updated' },
+                { value: 'newest', label: 'Newest' },
+                { value: 'price_asc', label: 'Price: low to high' },
+                { value: 'price_desc', label: 'Price: high to low' },
+              ]}
+              onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}
+            />
+          </div>
           {isParent && !childId && (
             <ErpBanner variant="info">Select a child to enrol them.</ErpBanner>
           )}
@@ -387,8 +470,8 @@ export default function StudentCourses() {
                           onClick={async () => {
                             begin();
                             try {
-                              if (c.favorite) await removeFavorite('course', c._id);
-                              else await addFavorite('course', c._id);
+                              if (c.favorite) await removeFavoriteFor('course', c._id, childId);
+                              else await addFavoriteFor('course', c._id, childId);
                               loadJoin();
                             } catch (err) {
                               setError(errorMessage(err));
@@ -406,7 +489,12 @@ export default function StudentCourses() {
                       </p>
                     </div>
                     <div className="st-resource-foot">
-                      <span className="st-price-value">{c.price ? money(c.price, c.currency) : 'Free'}</span>
+                      <span className="st-price-value">
+                        {c.price ? fmtMoney(c.price, c.currency).primary : 'Free'}
+                        {c.price && fmtMoney(c.price, c.currency).approx ? (
+                          <span className="erp-price-approx">{fmtMoney(c.price, c.currency).approx}</span>
+                        ) : null}
+                      </span>
                       {status === 'active' ? (
                         <ErpBadge tone="success" icon="check">
                           Enrolled

@@ -270,6 +270,11 @@ export default function AdminPaymentsPage() {
                       </td>
                       <td className="num" data-label="Amount">
                         <span className="adm-money">{money(p.amount, p.currency)}</span>
+                        {p.listCurrency &&
+                        p.listAmount &&
+                        String(p.listCurrency).toUpperCase() !== String(p.currency || '').toUpperCase() ? (
+                          <div className="muted">listed {money(p.listAmount, p.listCurrency)}</div>
+                        ) : null}
                       </td>
                       <td data-label="Status">
                         <span className="adm-cell-tags">
@@ -363,6 +368,15 @@ export default function AdminPaymentsPage() {
                       ? personLabel(selected.beneficiaryUserId)
                       : 'Platform',
                   },
+                  { label: 'Charged', value: money(selected.amount, selected.currency) },
+                  selected.listCurrency &&
+                    selected.listAmount &&
+                    String(selected.listCurrency).toUpperCase() !== String(selected.currency || '').toUpperCase() && {
+                      label: 'Listed',
+                      value: `${money(selected.listAmount, selected.listCurrency)}${
+                        selected.fxRate ? ` · FX ${selected.fxRate}` : ''
+                      }`,
+                    },
                 ]}
               />
             </AdminSection>

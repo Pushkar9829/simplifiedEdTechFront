@@ -71,6 +71,12 @@
   flex: 0 0 auto;
 }
 
+.st-filter-bar-place .erp-search {
+  flex: 1 1 8rem;
+  min-width: 7rem;
+  max-width: 12rem;
+}
+
 .st-filter-bar-end {
   display: flex;
   align-items: center;
@@ -1401,4 +1407,164 @@ a.st-file:hover {
 
 .st-active-chip.st-chip-off:hover {
   color: var(--erp-text-primary);
+}
+
+/* ── Discovery additions ───────────────────────────────── */
+
+.st-fav-switch .erp-icon {
+  color: var(--erp-danger-text);
+}
+
+.st-sheet-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-top: 0.875rem;
+}
+
+.st-sheet-field .erp-segmented {
+  align-self: flex-start;
+}
+
+.st-sheet-help {
+  margin: -0.25rem 0 0.75rem;
+  font-size: var(--erp-font-xs);
+}
+
+.st-slot-other {
+  display: block;
+  color: var(--erp-text-muted);
+  font-size: var(--erp-font-xs);
+  font-weight: 500;
+}
+
+.st-next-slot .st-slot-other {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.st-price-box .erp-price-approx {
+  font-weight: 500;
+}
+
+.st-tutor-links {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--erp-divider);
+}
+
+.st-tutor-links .erp-section-title {
+  margin-bottom: 0.5rem;
+}
+
+.st-tutor-links-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.st-tutor-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius-full);
+  background: var(--erp-surface);
+  color: var(--erp-text-primary);
+  font-size: var(--erp-font-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.st-tutor-link span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.st-tutor-link:hover {
+  border-color: var(--erp-accent);
+  color: var(--erp-accent);
+}
+
+.st-tutor-link.is-intro {
+  background: var(--erp-brand-50);
+  color: var(--erp-brand-700);
+  border-color: transparent;
+}
+
+.st-block-btn {
+  color: var(--erp-text-muted);
+}
+
+.st-block-btn:hover:not(:disabled) {
+  color: var(--erp-danger-text);
+}
+
+.st-join-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.st-join-filters .erp-select-wrap-inline {
+  flex: 0 0 auto;
+}
+
+.st-join-filters .st-mini-input {
+  width: 7.5rem;
+}
+
+.st-join-filters .st-date-input {
+  width: 10.5rem;
+}
+
+.st-joined-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.st-guide-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+}
+
+.st-guide-line a {
+  font-weight: 600;
+}
+
+:is(.erp-theme-bento, .erp-theme-bento-body) .st-tutor-link {
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--bt-line);
+  background: var(--bt-white);
+}
+
+:is(.erp-theme-bento, .erp-theme-bento-body) .st-tutor-link.is-intro {
+  background: var(--bt-lav);
+  color: var(--bt-lav-i);
+  box-shadow: none;
+}
+
+.st-subject-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.st-subject-wrap > .st-subject {
+  height: 100%;
+  padding-right: 3.25rem;
+}
+
+.st-subject-wrap > .st-fav {
+  position: absolute;
+  top: 0.625rem;
+  right: 0.625rem;
+  width: 34px;
+  height: 34px;
 }

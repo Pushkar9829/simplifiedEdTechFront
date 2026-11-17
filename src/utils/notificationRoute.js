@@ -34,6 +34,16 @@ export function notificationPath(n, role) {
       return `${base}/messages`;
     case 'academic':
       return role === 'parent' ? `${base}${child}` : null;
+    case 'homework_overdue':
+      if (role === 'student') return assignmentId ? `${base}/homework/${assignmentId}` : `${base}/homework`;
+      if (role === 'tutor') return `${base}/homework`;
+      return `${base}${child}`;
+    case 'project_due':
+      if (role === 'tutor' && projectId) return `${base}/projects/${projectId}`;
+      return `${base}/projects${child}`;
+    case 'subscription':
+      if (role === 'tutor') return `${base}/payments`;
+      return `${base}/payments?tab=plans${child ? `&${child.slice(1)}` : ''}`;
     default:
       return null;
   }

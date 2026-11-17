@@ -6,8 +6,11 @@ import {
   listClassLevels,
   listCountries,
   listCurrencies,
+  listMyBlocks,
   listTutorVideos,
+  unblockUser,
   updateMe,
+  uploadMyMedia,
 } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useCatalog } from '../../context/CatalogContext';
@@ -27,6 +30,7 @@ import {
   Icon,
 } from '../../components/erp';
 import { errorMessage } from '../../utils/errors';
+import { mediaName, mediaUrl } from '../../utils/mediaUrl';
 import { browserTimezone, timezoneOptions } from '../tutor/tutorOptions';
 import { RowIcon } from './sharedUi';
 import './shared.css';
@@ -40,6 +44,24 @@ function isoDate(v) {
   if (!v) return '';
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+}
+
+function ageFromDob(v, now = new Date()) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  let age = now.getFullYear() - d.getUTCFullYear();
+  const m = now.getMonth() - d.getUTCMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getUTCDate())) age -= 1;
+  return age >= 0 && age < 130 ? age : null;
+}
+
+const MEDIA_MAX_BYTES = 5 * 1024 * 1024;
+const IMAGE_RE = /\.(png|jpe?g|webp|gif)(\?|#|$)/i;
+const PDF_RE = /\.pdf(\?|#|$)/i;
+
+function isHttpUrl(v) {
+  return /^https?:\/\/\S+$/i.test(String(v || '').trim());
 }
 
 function addr(a = {}) {
@@ -86,8 +108,15 @@ function emptyForm(user, profile) {
     currency: profile?.currency || '',
     teachingMode: profile?.teachingMode || 'both',
     city: profile?.location?.city || '',
+    state: profile?.location?.state || '',
     area: profile?.location?.area || '',
     address: profile?.location?.address || '',
+    postalCode: profile?.location?.postalCode || '',
+    areasServed: (profile?.areasServed || []).join(', '),
+    profileLinks: (profile?.profileLinks || []).map((l) => ({ label: l.label || '', url: l.url || '' })),
+    defaultDocUrl: profile?.defaultDocUrl || '',
+    defaultWhiteboardUrl: profile?.defaultWhiteboardUrl || '',
+    applyCurrencyToOfferings: false,
     trialLessonAvailable: profile?.trialLessonAvailable ?? true,
     needBasedClasses: profile?.needBasedClasses ?? true,
     meetingProvider: profile?.meetingProvider || 'zoom',
@@ -113,6 +142,7 @@ function emptyForm(user, profile) {
 const IDENTITY_STATUS = {
   unverified: { label: 'Unverified', status: 'unverified' },
   pending: { label: 'Pending review', status: 'pending' },
+  checksum_ok: { label: 'Checksum valid', status: 'verified' },
   verified: { label: 'Verified', status: 'verified' },
   approved: { label: 'Verified', status: 'verified' },
   rejected: { label: 'Rejected', status: 'rejected' },
@@ -120,11 +150,13 @@ const IDENTITY_STATUS = {
 
 const GST_STATUS = {
   unverified: 'Not checked yet',
-  format_ok: 'Format looks valid — awaiting admin verification',
+  format_ok: 'Checksum valid — GSTN portal did not return a live record',
+  portal_verified: 'Matched on the GSTN taxpayer portal',
+  checksum_ok: 'Checksum valid',
   pending: 'Pending admin review',
   verified: 'Verified by admin',
   approved: 'Verified by admin',
-  rejected: 'Number format is invalid or was rejected',
+  rejected: 'Number failed the official checksum or was rejected',
 };
 
 function seedForm(user, profile, countries) {
@@ -163,13 +195,22 @@ const STEP_META = {
   location: { label: 'Rates & location', icon: 'credit-card', description: 'Hourly rates, studio and addresses.' },
   tax: { label: 'GST / tax', icon: 'receipt', description: 'Tax registration details for invoices.' },
   videos: { label: 'Videos', icon: 'video', description: 'Demo videos shown on your public profile.' },
+  blocked: {
+    label: 'Blocked users',
+    icon: 'lock',
+    description: 'People you have blocked cannot message or book with you.',
+  },
 };
+
+// Steps without profile form fields: switching away from them does not save the form.
+const NO_SAVE_STEPS = new Set(['videos', 'blocked']);
 
 function stepsFor(role, tutorFields) {
   const ids = ['account', 'personal'];
   if (role === 'student') ids.push('school', 'address', 'identity');
   if (role === 'parent') ids.push('identity');
   if (tutorFields) ids.push('teaching', 'location', 'identity', 'tax', 'videos');
+  if (role && role !== 'admin') ids.push('blocked');
   return ids.map((id, i) => ({ id, n: i + 1, ...STEP_META[id] }));
 }
 
@@ -190,6 +231,203 @@ function SubHead({ children, hint }) {
     <div className="sp-subhead erp-form-span">
       <h4>{children}</h4>
       {hint ? <p>{hint}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * Upload-or-link field for profile media. Uploading saves on the server immediately
+ * (POST /users/me/media) and returns the stored URL; a pasted link is saved with the step.
+ */
+function MediaField({ label, kind, value, onChange, accept, imageOnly = false, round = false, name, hint }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [inputKey, setInputKey] = useState(0);
+  const url = value ? mediaUrl(value) : '';
+  const isImage = url && (IMAGE_RE.test(url) || (imageOnly && !PDF_RE.test(url)));
+  const isPdf = url && PDF_RE.test(url);
+  const badLink = value && !value.startsWith('/') && !isHttpUrl(value);
+
+  const onFile = async (e) => {
+    const file = e.target.files?.[0];
+    setInputKey((k) => k + 1);
+    if (!file) return;
+    setErr('');
+    if (file.size > MEDIA_MAX_BYTES) {
+      setErr('File is larger than 5 MB.');
+      return;
+    }
+    const okType = imageOnly ? /^image\//.test(file.type) : /^image\/|application\/pdf/.test(file.type);
+    if (!okType) {
+      setErr(imageOnly ? 'Choose a PNG, JPG, WebP or GIF image.' : 'Choose an image or a PDF.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await uploadMyMedia(kind, file);
+      onChange(res?.url || '', { uploaded: true });
+    } catch (ex) {
+      setErr(errorMessage(ex));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="field erp-form-span sp-media">
+      <span className="erp-label">{label}</span>
+      <div className="sp-media-row">
+        <div className={`sp-media-preview${round ? ' is-round' : ''}`} aria-hidden={!url}>
+          {round ? (
+            <ErpAvatar name={name} src={value || undefined} size="xl" />
+          ) : isImage ? (
+            <img src={url} alt="" />
+          ) : url ? (
+            <Icon name="file-text" size={26} />
+          ) : (
+            <Icon name="upload" size={22} />
+          )}
+        </div>
+        <div className="sp-media-body">
+          <div className="sp-media-actions">
+            <label className={`erp-btn-secondary erp-btn-sm sp-media-btn${busy ? ' is-busy' : ''}`}>
+              <Icon name="upload" size={15} />
+              <span>{busy ? 'Uploading…' : value ? 'Replace file' : 'Upload file'}</span>
+              <input key={inputKey} type="file" accept={accept} onChange={onFile} disabled={busy} />
+            </label>
+            {url ? (
+              <a className="sp-media-open" href={url} target="_blank" rel="noreferrer">
+                <Icon name="external-link" size={14} /> {isPdf ? 'Open PDF' : 'Open'}
+              </a>
+            ) : null}
+            {value ? (
+              <ErpButton variant="ghost" size="sm" icon="x" type="button" onClick={() => onChange('')}>
+                Remove
+              </ErpButton>
+            ) : null}
+          </div>
+          <span className="sp-toggle-hint">
+            {hint || (imageOnly ? 'PNG, JPG, WebP or GIF · up to 5 MB' : 'Image or PDF · up to 5 MB')}
+            {value && value.startsWith('/') ? ` · ${mediaName(value)}` : ''}
+          </span>
+          {err ? (
+            <span className="sp-media-error" role="alert">
+              {err}
+            </span>
+          ) : null}
+          <ErpInput
+            label="or paste a link"
+            optional
+            value={value || ''}
+            placeholder="https://…"
+            error={badLink ? 'Use a full https:// link' : undefined}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BlockedUsers({ role }) {
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState('');
+  const [busyId, setBusyId] = useState('');
+  const [confirm, setConfirm] = useState(null);
+
+  const load = () =>
+    listMyBlocks()
+      .then((d) => setRows(Array.isArray(d) ? d : d?.items || []))
+      .catch((ex) => {
+        setErr(errorMessage(ex));
+        setRows([]);
+      });
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const doUnblock = async () => {
+    const target = confirm?.targetUserId;
+    const id = target?._id || target;
+    if (!id) return;
+    setBusyId(String(id));
+    try {
+      await unblockUser(id);
+      setConfirm(null);
+      await load();
+    } catch (ex) {
+      setErr(errorMessage(ex));
+      setConfirm(null);
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const who = (t = {}) =>
+    t.role === 'tutor' && (role === 'student' || role === 'parent')
+      ? `Tutor ${t.refCode || ''}`.trim()
+      : t.name || t.refCode || 'User';
+
+  return (
+    <div className="stack">
+      {role === 'parent' ? (
+        <p className="sp-quiet" style={{ margin: 0 }}>
+          Tutors you block are also hidden from your linked children.
+        </p>
+      ) : null}
+      {err ? (
+        <ErpBanner variant="danger" onDismiss={() => setErr('')}>
+          {err}
+        </ErpBanner>
+      ) : null}
+      {rows === null ? (
+        <p className="sp-quiet">Loading…</p>
+      ) : rows.length ? (
+        <ul className="sp-video-list sp-block-list">
+          {rows.map((r) => {
+            const t = r.targetUserId || {};
+            return (
+              <li key={r._id}>
+                <ErpAvatar name={who(t)} src={t.avatar || undefined} size="sm" />
+                <span className="sp-video-name">
+                  <strong>{who(t)}</strong>
+                  <span className="sp-toggle-hint">
+                    {[t.role ? t.role.charAt(0).toUpperCase() + t.role.slice(1) : '', r.reason ? `Reason: ${r.reason}` : '']
+                      .filter(Boolean)
+                      .join(' · ')}
+                    {r.createdAt ? ` · since ${new Date(r.createdAt).toLocaleDateString()}` : ''}
+                  </span>
+                </span>
+                <ErpButton
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  disabled={busyId === String(t._id)}
+                  onClick={() => setConfirm(r)}
+                >
+                  Unblock
+                </ErpButton>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <ErpEmptyState
+          icon="shield-check"
+          title="You haven't blocked anyone"
+          description="Use Block in Messages or on a tutor or student page to stop someone contacting you."
+        />
+      )}
+      <ErpConfirm
+        open={Boolean(confirm)}
+        title="Unblock user"
+        message={confirm ? `Unblock ${who(confirm.targetUserId || {})}? They will be able to message and book with you again.` : ''}
+        confirmLabel="Unblock"
+        busy={Boolean(busyId)}
+        onConfirm={doUnblock}
+        onCancel={() => !busyId && setConfirm(null)}
+      />
     </div>
   );
 }
@@ -272,6 +510,22 @@ export default function ProfilePage({ tutorFields = false }) {
     const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
     setForm((f) => ({ ...f, [key]: value }));
   };
+
+  // Uploads are already stored server-side; refresh auth so header/avatar update everywhere.
+  const setMedia = (key) => (value, meta) => {
+    setForm((f) => ({ ...f, [key]: value }));
+    if (meta?.uploaded) {
+      setMsg('File uploaded');
+      refresh().catch(() => {});
+    }
+  };
+
+  const setLink = (i, field) => (e) =>
+    setForm((f) => {
+      const links = [...(f.profileLinks || [])];
+      links[i] = { ...links[i], [field]: e.target.value };
+      return { ...f, profileLinks: links };
+    });
 
   const setAddr = (key, field) => (e) =>
     setForm((f) => ({ ...f, [key]: { ...(f[key] || addr()), [field]: e.target.value } }));
@@ -364,7 +618,28 @@ export default function ProfilePage({ tutorFields = false }) {
         hourlyRateOnline: Number(form.hourlyRateOnline) || 0,
         hourlyRateOffline: Number(form.hourlyRateOffline) || 0,
         teachingMode: form.teachingMode,
-        location: { city: form.city, area: form.area, address: form.address },
+        location: {
+          city: form.city || '',
+          state: form.state || '',
+          area: form.area || '',
+          address: form.address || '',
+          postalCode: form.postalCode || '',
+        },
+        areasServed: String(form.areasServed || '')
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean),
+        profileLinks: (form.profileLinks || [])
+          .map((l) => {
+            const url = (l.url || '').trim();
+            // "linkedin.com/in/x" → "https://linkedin.com/in/x"; other schemes are left for the server to reject.
+            const withScheme = url && !/^[a-z][a-z0-9+.-]*:/i.test(url) ? `https://${url}` : url;
+            return { label: (l.label || '').trim(), url: withScheme };
+          })
+          .filter((l) => l.url),
+        defaultDocUrl: form.defaultDocUrl || '',
+        defaultWhiteboardUrl: form.defaultWhiteboardUrl || '',
+        ...(form.applyCurrencyToOfferings ? { applyCurrencyToOfferings: true } : {}),
         trialLessonAvailable: form.trialLessonAvailable,
         needBasedClasses: !!form.needBasedClasses,
         meetingProvider: form.meetingProvider || 'zoom',
@@ -397,7 +672,7 @@ export default function ProfilePage({ tutorFields = false }) {
     if (nextId === step) return;
     setError('');
     setMsg('');
-    if (step !== 'videos') {
+    if (!NO_SAVE_STEPS.has(step)) {
       setSaving(true);
       try {
         await saveProfile();
@@ -434,7 +709,7 @@ export default function ProfilePage({ tutorFields = false }) {
   };
 
   const onContinue = async () => {
-    if (isLast && step !== 'videos') {
+    if (isLast && !NO_SAVE_STEPS.has(step)) {
       await saveCurrent('Profile saved');
       return;
     }
@@ -482,6 +757,7 @@ export default function ProfilePage({ tutorFields = false }) {
     }
   };
 
+  const age = ageFromDob(form.dateOfBirth);
   const rawIdentity = profile?.identity?.status || 'unverified';
   const identityStatus = IDENTITY_STATUS[rawIdentity] || {
     label: rawIdentity.replace(/_/g, ' '),
@@ -518,16 +794,17 @@ export default function ProfilePage({ tutorFields = false }) {
               onChange={set('email')}
               autoComplete="email"
             />
-            <div className="erp-form-span">
-              <ErpInput
-                label="Avatar URL"
-                optional
-                value={form.avatar || ''}
-                onChange={set('avatar')}
-                placeholder="https://…"
-                helper="Paste a link to a square image — the preview above updates as you type."
-              />
-            </div>
+            <MediaField
+              label="Profile picture"
+              kind="avatar"
+              value={form.avatar || ''}
+              onChange={setMedia('avatar')}
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              imageOnly
+              round
+              name={form.name || user?.name}
+              hint="A square photo works best · PNG, JPG, WebP or GIF · up to 5 MB"
+            />
             <SubHead hint="Used for class times, prices and invoices.">Region</SubHead>
             <ErpSelect
               label="Country"
@@ -546,6 +823,7 @@ export default function ProfilePage({ tutorFields = false }) {
               value={form.preferredCurrency || form.currency || ''}
               options={currencyOptions}
               onChange={set('preferredCurrency')}
+              helper="Prices on Find tutors, courses and projects show in this currency. Invoices stay in the tutor’s currency."
             />
           </form>
         );
@@ -556,7 +834,9 @@ export default function ProfilePage({ tutorFields = false }) {
               label="Date of birth"
               type="date"
               value={form.dateOfBirth || ''}
+              max={new Date().toISOString().slice(0, 10)}
               onChange={set('dateOfBirth')}
+              helper={age != null ? `Age ${age}` : 'Your age is worked out from this date.'}
             />
             <ErpSelect
               label="Sex / gender"
@@ -564,11 +844,17 @@ export default function ProfilePage({ tutorFields = false }) {
               options={[{ value: '', label: 'Select' }, ...options('sex')]}
               onChange={set('sex')}
             />
-            <ErpInput
-              label="Intro page URL"
-              optional
+            <MediaField
+              label="Intro page"
+              kind="introPage"
               value={form.introPageUrl || ''}
-              onChange={set('introPageUrl')}
+              onChange={setMedia('introPageUrl')}
+              accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+              hint={
+                tutorFields
+                  ? 'A one-page introduction (PDF or image) shown on your tutor profile · up to 5 MB'
+                  : 'A one-page introduction (PDF or image) · up to 5 MB'
+              }
             />
             {(user?.role === 'student' || user?.role === 'parent' || tutorFields) && (
               <ErpInput
@@ -675,14 +961,89 @@ export default function ProfilePage({ tutorFields = false }) {
               options={options('meeting_provider')}
               onChange={set('meetingProvider')}
             />
+            <SubHead hint="Optional defaults. If you leave these empty, each booked class still gets a live notebook and whiteboard.">
+              Google Doc &amp; class tools
+            </SubHead>
+            <ErpInput
+              label="Shared Google Doc"
+              optional
+              value={form.defaultDocUrl || ''}
+              onChange={set('defaultDocUrl')}
+              placeholder="https://docs.google.com/document/d/…"
+              helper="Paste a share link to reuse it. Otherwise each class gets a live notebook (or a Google Doc when the platform Google account is connected)."
+              error={form.defaultDocUrl && !isHttpUrl(form.defaultDocUrl) ? 'Use a full https:// link' : undefined}
+            />
+            <ErpInput
+              label="Default whiteboard"
+              optional
+              value={form.defaultWhiteboardUrl || ''}
+              onChange={set('defaultWhiteboardUrl')}
+              placeholder="https://excalidraw.com/#room=…"
+              helper="Leave empty to create a shared Excalidraw board for each class."
+              error={
+                form.defaultWhiteboardUrl && !isHttpUrl(form.defaultWhiteboardUrl) ? 'Use a full https:// link' : undefined
+              }
+            />
+            <SubHead hint="Google Drive, LinkedIn, YouTube or a website. Shown on your public profile as source accounts — never add a phone number or email.">
+              Source accounts
+            </SubHead>
+            <div className="erp-form-span sp-links">
+              {(form.profileLinks || []).map((l, i) => (
+                <div className="sp-link-row" key={i}>
+                  <ErpInput label="Label" value={l.label} onChange={setLink(i, 'label')} placeholder="LinkedIn" />
+                  <ErpInput
+                    label="URL"
+                    value={l.url}
+                    onChange={setLink(i, 'url')}
+                    placeholder="https://…"
+                    error={l.url && !isHttpUrl(l.url) ? 'Use a full https:// link' : undefined}
+                  />
+                  <ErpButton
+                    variant="ghost"
+                    size="sm"
+                    icon="trash"
+                    type="button"
+                    aria-label={`Remove link ${i + 1}`}
+                    onClick={() =>
+                      setForm((f) => ({ ...f, profileLinks: (f.profileLinks || []).filter((_, k) => k !== i) }))
+                    }
+                  >
+                    Remove
+                  </ErpButton>
+                </div>
+              ))}
+              {(form.profileLinks || []).length < 10 ? (
+                <ErpButton
+                  variant="secondary"
+                  size="sm"
+                  icon="plus"
+                  type="button"
+                  onClick={() =>
+                    setForm((f) => ({ ...f, profileLinks: [...(f.profileLinks || []), { label: '', url: '' }] }))
+                  }
+                >
+                  Add source account
+                </ErpButton>
+              ) : null}
+            </div>
           </form>
         );
       case 'location':
         return (
           <form {...formProps}>
-            <SubHead hint={`Currency follows your selected country${form.currency ? ` (${form.currency})` : ''}.`}>
-              Hourly rates
-            </SubHead>
+            <SubHead hint="The currency your rates and offerings are charged in.">Hourly rates</SubHead>
+            <ErpSelect
+              label="Teaching currency"
+              value={form.currency || ''}
+              options={currencyOptions}
+              onChange={set('currency')}
+            />
+            <ToggleRow
+              checked={!!form.applyCurrencyToOfferings}
+              onChange={set('applyCurrencyToOfferings')}
+              title="Also update my existing offerings"
+              hint="Switches every subject offering to this currency. Amounts are not converted."
+            />
             <ErpInput
               label={`Online rate${form.currency ? ` (${form.currency})` : ''}`}
               type="number"
@@ -697,11 +1058,29 @@ export default function ProfilePage({ tutorFields = false }) {
               value={form.hourlyRateOffline || 0}
               onChange={set('hourlyRateOffline')}
             />
-            <SubHead hint="Offline slots use this studio address.">Studio</SubHead>
+            <SubHead hint="Students search by these. Offline slots use this studio address.">Studio & area</SubHead>
             <ErpInput label="City" value={form.city || ''} onChange={set('city')} />
+            <ErpInput label="State" value={form.state || ''} onChange={set('state')} />
             <ErpInput label="Area" value={form.area || ''} onChange={set('area')} />
+            <ErpInput
+              label="Postal code / PIN"
+              value={form.postalCode || ''}
+              onChange={set('postalCode')}
+              inputMode="text"
+              maxLength={12}
+            />
             <div className="erp-form-span">
               <ErpInput label="Studio / address" value={form.address || ''} onChange={set('address')} />
+            </div>
+            <div className="erp-form-span">
+              <ErpInput
+                label="Areas served"
+                optional
+                value={form.areasServed || ''}
+                onChange={set('areasServed')}
+                placeholder="Bandra, Khar, 400050"
+                helper="Localities or PIN codes you travel to for offline classes, separated by commas."
+              />
             </div>
             {addressFields('currentAddress', 'Current address')}
             {addressFields('permanentAddress', 'Permanent address')}
@@ -721,8 +1100,8 @@ export default function ProfilePage({ tutorFields = false }) {
               <span>
                 <span className="sp-toggle-title">Verification status</span>
                 <span className="sp-toggle-hint">
-                  Identity numbers are visible only to you and admin and stay masked on public profiles. Changing the
-                  number sends it back for review.
+                  {profile?.identity?.portalNote ||
+                    'Aadhaar uses the UIDAI Verhoeff checksum; SSN uses SSA issuance rules. Numbers stay masked on public profiles.'}
                 </span>
               </span>
               <ErpStatusBadge status={identityStatus.status} dot>
@@ -736,14 +1115,14 @@ export default function ProfilePage({ tutorFields = false }) {
               onChange={set('identityType')}
             />
             <ErpInput label="Identity number" value={form.identityNumber || ''} onChange={set('identityNumber')} />
-            <div className="erp-form-span">
-              <ErpInput
-                label="ID document URL"
-                value={form.identityDocumentUrl || ''}
-                onChange={set('identityDocumentUrl')}
-                placeholder="https://…"
-              />
-            </div>
+            <MediaField
+              label="ID document"
+              kind="identityDoc"
+              value={form.identityDocumentUrl || ''}
+              onChange={setMedia('identityDocumentUrl')}
+              accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+              hint="Scan or photo of the ID (image or PDF) · up to 5 MB · visible only to you and admin"
+            />
           </form>
         );
       case 'tax':
@@ -751,11 +1130,16 @@ export default function ProfilePage({ tutorFields = false }) {
           <form {...formProps}>
             {gstStatus ? (
               <div className="sp-status-line erp-form-span">
-                <RowIcon name="receipt" tone={['verified', 'approved'].includes(gstStatus) ? 'success' : 'brand'} size="sm" />
+                <RowIcon
+                  name="receipt"
+                  tone={['verified', 'approved', 'portal_verified', 'format_ok', 'checksum_ok'].includes(gstStatus) ? 'success' : 'brand'}
+                  size="sm"
+                />
                 <span>
                   <span className="sp-toggle-title">GST status</span>
                   <span className="sp-toggle-hint">
-                    {profile?.gst?.portalNote ? `Admin note: ${profile.gst.portalNote}` : 'Live portal verification is done by admin.'}
+                    {profile?.gst?.portalNote ||
+                      'GSTIN is checked with the official GSTN checksum, then looked up on the taxpayer portal.'}
                   </span>
                 </span>
                 <ErpStatusBadge status={gstStatus} dot>
@@ -775,7 +1159,7 @@ export default function ProfilePage({ tutorFields = false }) {
             <ErpInput label="Registered address" value={form.gstAddress || ''} onChange={set('gstAddress')} />
             {!gstStatus ? (
               <p className="sp-quiet erp-form-span" style={{ margin: 0 }}>
-                Live portal verification is done by admin.
+                Saving runs the GSTN checksum and a live taxpayer lookup. Admin can re-check from the user record.
               </p>
             ) : null}
           </form>
@@ -845,6 +1229,8 @@ export default function ProfilePage({ tutorFields = false }) {
             )}
           </div>
         );
+      case 'blocked':
+        return <BlockedUsers role={user?.role} />;
       default:
         return null;
     }
@@ -876,6 +1262,11 @@ export default function ProfilePage({ tutorFields = false }) {
             {form.email ? (
               <span>
                 <Icon name="mail" size={13} /> {form.email}
+              </span>
+            ) : null}
+            {age != null ? (
+              <span>
+                <Icon name="calendar" size={13} /> Age {age}
               </span>
             ) : null}
             {form.country ? (
@@ -970,7 +1361,7 @@ export default function ProfilePage({ tutorFields = false }) {
                 </ErpButton>
               ) : null}
               <span className="sp-footer-spacer" />
-              {step !== 'videos' && !(isLast || steps.length === 1) ? (
+              {!NO_SAVE_STEPS.has(step) && !(isLast || steps.length === 1) ? (
                 <ErpButton variant="secondary" disabled={saving} onClick={() => saveCurrent()}>
                   {saving ? 'Saving…' : 'Save'}
                 </ErpButton>
@@ -980,7 +1371,7 @@ export default function ProfilePage({ tutorFields = false }) {
                   {saving ? 'Saving…' : 'Save & continue'}
                 </ErpButton>
               ) : null}
-              {(isLast && step !== 'videos') || steps.length === 1 ? (
+              {(isLast && !NO_SAVE_STEPS.has(step)) || steps.length === 1 ? (
                 <ErpButton icon="check" loading={saving} onClick={onContinue}>
                   {saving ? 'Saving…' : 'Save profile'}
                 </ErpButton>

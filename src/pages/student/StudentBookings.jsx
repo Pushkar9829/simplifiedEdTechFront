@@ -16,6 +16,11 @@ import {
   confirmDoorstep,
 } from '../../api';
 import ClassToolsModal from '../../components/ClassToolsModal';
+import BookingEventModal from '../../components/BookingEventModal';
+import { bookingEventVariant, bookingTooltip, dualTime } from '../../components/bookingTime';
+import { ClassCodeCard } from '../../components/ClassCode';
+import { pickCodeBooking } from '../../components/classCodeLogic';
+import CalendarFeedButton from '../../components/CalendarFeedPanel';
 import {
   ErpBadge,
   ErpBanner,
@@ -122,7 +127,11 @@ export default function StudentBookings() {
   const [feedback, setFeedback] = useState(null);
   const [offlinePlace, setOfflinePlace] = useState('');
   const [busy, setBusy] = useState(false);
+  const [eventBooking, setEventBooking] = useState(null);
+  const [codeItems, setCodeItems] = useState([]);
+  const [tick, setTick] = useState(0);
   const reqId = useRef(0);
+  const role = isParent ? 'parent' : 'student';
 
   const waitingForChild = isParent && (parent.loading || !childId);
 
@@ -138,14 +147,25 @@ export default function StudentBookings() {
     setError('');
     const scope = childId ? { studentUserId: childId } : {};
     try {
-      const [d, c, up, past, all] = await Promise.all([
+      const now = Date.now();
+      const [d, c, up, past, all, soon] = await Promise.all([
         listBookings({ ...scope, ...tabQuery(tab), page, limit: PAGE_SIZE }),
         listScheduleChanges(),
         listBookings({ ...scope, ...tabQuery('upcoming'), page: 1, limit: 1 }),
         listBookings({ ...scope, ...tabQuery('completed'), page: 1, limit: 1 }),
         listBookings({ ...scope, page: 1, limit: 1 }),
+        // Classes whose start/end code could be needed now or within the next hour.
+        listBookings({
+          ...scope,
+          from: new Date(now - 6 * 3600000).toISOString(),
+          to: new Date(now + 2 * 3600000).toISOString(),
+          excludeStatus: 'cancelled',
+          sort: 'startAt',
+          limit: 20,
+        }).catch(() => ({ items: [] })),
       ]);
       if (id !== reqId.current) return;
+      setCodeItems(soon.items || []);
       setItems(d.items || []);
       setTotal(d.total ?? (d.items || []).length);
       setCounts({ upcoming: up.total ?? 0, completed: past.total ?? 0, all: all.total ?? 0 });
@@ -164,6 +184,14 @@ export default function StudentBookings() {
   useEffect(() => {
     setPage(1);
   }, [tab, childId]);
+
+  // Re-check every 30 s so the code card appears as its window approaches.
+  useEffect(() => {
+    const t = window.setInterval(() => setTick((n) => n + 1), 30000);
+    return () => window.clearInterval(t);
+  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const codeBooking = useMemo(() => pickCodeBooking(codeItems), [codeItems, tick]);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -280,7 +308,8 @@ export default function StudentBookings() {
 
   const actionsFor = (b) => {
     const list = [];
-    if (isActive(b) && !hasEnded(b)) {
+    // Class links stay available before and after the class (decision #7).
+    if (b.status !== 'cancelled' && (b.deliveryMode !== 'offline' || !hasEnded(b))) {
       list.push({
         label: b.deliveryMode === 'offline' ? 'Location' : 'Class tools',
         onClick: () => openClassTools(b),
@@ -299,6 +328,7 @@ export default function StudentBookings() {
     }
     if (b.status === 'completed' && !b.consumed) list.push({ label: 'Summary', onClick: () => openSummary(b) });
     if (canFeedback(b)) list.push({ label: 'Feedback', onClick: () => openFeedback(b) });
+    list.push({ label: 'Details & calendar', onClick: () => setEventBooking(b) });
     if (b.deliveryMode === 'offline' && b.doorstep?.checkedInAt && !b.doorstep?.confirmedAt) {
       list.push({
         label: 'Confirm doorstep',
@@ -327,25 +357,34 @@ export default function StudentBookings() {
     return all[0] || null;
   };
 
+  const eventModalActions = (b) => {
+    if (!b) return [];
+    const first = primaryAction(b);
+    if (!first || first.label === 'Details & calendar') return [];
+    return [
+      {
+        label: first.label,
+        onClick: () => {
+          setEventBooking(null);
+          first.onClick();
+        },
+      },
+    ];
+  };
+
   const events = useMemo(
     () =>
       visible.map((b) => ({
         id: b._id,
         start: b.startAt,
-        title: `${b.refCode || ''} ${b.subjectId?.name || 'Lesson'} · ${tutorRef(b.tutorUserId)}${
+        title: `${b.subjectId?.name || 'Lesson'} · ${tutorRef(b.tutorUserId)}${
           isParent && b.studentUserId?.name ? ` · ${b.studentUserId.name}` : ''
-        } · ${b.status || ''}`.trim(),
-        variant:
-          b.status === 'cancelled'
-            ? 'cancelled'
-            : b.status === 'completed'
-              ? 'completed'
-              : b.deliveryMode === 'offline'
-                ? 'offline'
-                : 'online',
+        }`.trim(),
+        tooltip: bookingTooltip(b, role, zone),
+        variant: bookingEventVariant(b),
         booking: b,
       })),
-    [visible, isParent]
+    [visible, isParent, role, zone]
   );
 
   if (isParent && parent.error && !parent.children.length) {
@@ -391,14 +430,6 @@ export default function StudentBookings() {
     if (last && last.key === key) last.items.push(b);
     else groups.push({ key, items: [b] });
   });
-  const timeOf = (v) => {
-    try {
-      return new Date(v).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: zone || undefined });
-    } catch {
-      return new Date(v).toLocaleTimeString();
-    }
-  };
-
   const emptyState = !counts.all ? (
     <ErpEmptyState
       icon="calendar"
@@ -452,6 +483,7 @@ export default function StudentBookings() {
         }
         actions={
           <>
+            <CalendarFeedButton />
             <LinkButton to={policyPath} variant="secondary" icon="shield-check">
               Class policy
             </LinkButton>
@@ -471,6 +503,19 @@ export default function StudentBookings() {
         <ErpBanner variant="success" onDismiss={() => setMsg('')}>
           {msg}
         </ErpBanner>
+      )}
+
+      {codeBooking && (
+        <ClassCodeCard
+          key={codeBooking._id}
+          booking={codeBooking}
+          timeZone={zone}
+          isParent={isParent}
+          subtitle={`${dualTime(codeBooking, role, zone)} · ${tutorRef(codeBooking.tutorUserId)}${
+            isParent && codeBooking.studentUserId?.name ? ` · for ${codeBooking.studentUserId.name}` : ''
+          }`}
+          onProgress={load}
+        />
       )}
 
       <ErpTabs
@@ -524,11 +569,9 @@ export default function StudentBookings() {
           ) : (
             <ErpCalendar
               events={events}
+              timeZone={zone}
               onEventClick={(e) => {
-                const b = e.booking;
-                if (!b) return;
-                const first = primaryAction(b);
-                if (first) first.onClick();
+                if (e.booking) setEventBooking(e.booking);
               }}
             />
           )}
@@ -590,8 +633,7 @@ export default function StudentBookings() {
                             <p className="st-item-meta">
                               <span>
                                 <Icon name="clock" size={14} />
-                                {timeOf(b.startAt)}
-                                {b.endAt ? ` – ${timeOf(b.endAt)}` : ''}
+                                {dualTime(b, role, zone)}
                                 {!past && !live ? ` · ${timeUntil(b.startAt)}` : ''}
                               </span>
                               <span>
@@ -667,6 +709,15 @@ export default function StudentBookings() {
       )}
 
       <ClassToolsModal open={Boolean(joinTools)} join={joinTools} onClose={() => setJoinTools(null)} />
+
+      <BookingEventModal
+        open={Boolean(eventBooking)}
+        booking={eventBooking}
+        role={role}
+        viewerZone={zone}
+        onClose={() => setEventBooking(null)}
+        actions={eventModalActions(eventBooking)}
+      />
 
       <ErpModal open={Boolean(offlinePlace)} title="Class location" onClose={() => setOfflinePlace('')}>
         <p style={{ margin: 0 }}>{offlinePlace}</p>

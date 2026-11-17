@@ -7,8 +7,10 @@ import { useTheme } from '../context/ThemeContext';
 import { useIsPhone } from '../hooks/useIsPhone';
 import { mediaUrl } from '../utils/mediaUrl';
 import { missingProfileFields } from '../utils/profileCompletion';
+import { notificationPath } from '../utils/notificationRoute';
 import { ErpSelect, ErpThemeToggle } from './erp';
 import { Icon } from './Icon';
+import CurrencyChip from './CurrencyChip';
 import './AppShell.css';
 
 const ONBOARD_KEY = 'ibdp_onboard_dismissed';
@@ -154,6 +156,199 @@ function UserMenu({ user, roleLabel, profilePath, onLogout, variant = 'card' }) 
             <Icon name="log-out" size={16} />
             Sign out
           </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// Bell dropdown (decision #11): type → icon/tone, shared look with the Notifications page.
+const BELL_TYPES = {
+  booking: { icon: 'calendar', tone: 'brand' },
+  attendance: { icon: 'clipboard-check', tone: 'info' },
+  homework: { icon: 'file-text', tone: 'warning' },
+  homework_overdue: { icon: 'alert-triangle', tone: 'danger' },
+  grade: { icon: 'award', tone: 'success' },
+  payment: { icon: 'credit-card', tone: 'success' },
+  credit: { icon: 'wallet', tone: 'success' },
+  subscription: { icon: 'ticket', tone: 'warning' },
+  project: { icon: 'folder', tone: 'info' },
+  project_due: { icon: 'folder', tone: 'warning' },
+  verification: { icon: 'shield-check', tone: 'brand' },
+  support: { icon: 'life-buoy', tone: 'info' },
+  message: { icon: 'message-square', tone: 'brand' },
+  academic: { icon: 'graduation-cap', tone: 'brand' },
+};
+const BELL_LIMIT = 8;
+
+function ago(value) {
+  const ms = Date.now() - new Date(value).getTime();
+  if (!Number.isFinite(ms)) return '';
+  const min = Math.round(ms / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
+/** Header bell: latest notifications with unread dots, mark read / all, deep links, "View all". */
+function NotificationBell({ notifPath, role }) {
+  const { unread, markRead, markAllRead, loadRecent } = useNotifications();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState(null);
+  const [error, setError] = useState('');
+  const [busyAll, setBusyAll] = useState(false);
+  const ref = useRef(null);
+
+  const load = async () => {
+    setError('');
+    try {
+      setItems(await loadRecent(BELL_LIMIT));
+    } catch (err) {
+      setError(err?.message || 'Could not load notifications');
+      setItems((prev) => prev || []);
+    }
+  };
+
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => {
+      if (!ref.current?.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next) load();
+  };
+
+  const markLocal = (id) => setItems((prev) => (prev || []).map((n) => (n._id === id ? { ...n, isRead: true } : n)));
+
+  const onOpenItem = async (n) => {
+    const path = notificationPath(n, role);
+    if (!n.isRead) {
+      markLocal(n._id);
+      markRead(n._id).catch(() => {});
+    }
+    if (path) {
+      setOpen(false);
+      navigate(path);
+    }
+  };
+
+  const onMarkAll = async () => {
+    setBusyAll(true);
+    try {
+      await markAllRead();
+      setItems((prev) => (prev || []).map((n) => ({ ...n, isRead: true })));
+    } catch (err) {
+      setError(err?.message || 'Could not mark all as read');
+    } finally {
+      setBusyAll(false);
+    }
+  };
+
+  return (
+    <div className="erp-bell-wrap" ref={ref}>
+      <button
+        type="button"
+        className="erp-icon-btn erp-bell"
+        aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title="Notifications"
+        onClick={toggle}
+      >
+        <Icon name="bell" size={18} />
+        {unread > 0 ? <span className="erp-bell-count">{unread > 99 ? '99+' : unread}</span> : null}
+      </button>
+      {open ? (
+        <div className="erp-bell-pop" role="dialog" aria-label="Notifications">
+          <div className="erp-bell-head">
+            <strong>Notifications</strong>
+            {unread > 0 ? <span className="erp-bell-unread">{unread} unread</span> : null}
+            <button
+              type="button"
+              className="erp-bell-markall"
+              onClick={onMarkAll}
+              disabled={busyAll || !(items || []).some((n) => !n.isRead)}
+            >
+              <Icon name="check-circle" size={14} />
+              Mark all read
+            </button>
+          </div>
+          {error ? <p className="erp-bell-error">{error}</p> : null}
+          <div className="erp-bell-list">
+            {items === null ? (
+              <p className="erp-bell-empty">Loading…</p>
+            ) : !items.length ? (
+              <p className="erp-bell-empty">
+                <Icon name="inbox" size={18} />
+                You are all caught up.
+              </p>
+            ) : (
+              items.map((n) => {
+                const look = BELL_TYPES[n.type] || { icon: 'bell', tone: 'neutral' };
+                const linked = Boolean(notificationPath(n, role));
+                return (
+                  <div key={n._id} className={`erp-bell-item${n.isRead ? '' : ' erp-bell-item-unread'}`}>
+                    <button
+                      type="button"
+                      className="erp-bell-main"
+                      onClick={() => onOpenItem(n)}
+                      title={linked ? 'Open' : undefined}
+                    >
+                      <span className={`erp-bell-ic erp-bell-ic-${look.tone}`} aria-hidden="true">
+                        <Icon name={look.icon} size={15} />
+                      </span>
+                      <span className="erp-bell-tx">
+                        <span className="erp-bell-title">{n.title}</span>
+                        <span className="erp-bell-body">{n.body}</span>
+                        <span className="erp-bell-time">{ago(n.createdAt)}</span>
+                      </span>
+                    </button>
+                    {!n.isRead ? (
+                      <button
+                        type="button"
+                        className="erp-bell-dot"
+                        aria-label={`Mark "${n.title}" as read`}
+                        title="Mark as read"
+                        onClick={() => {
+                          markLocal(n._id);
+                          markRead(n._id).catch(() => {});
+                        }}
+                      />
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          {notifPath ? (
+            <Link className="erp-bell-all" to={notifPath} onClick={() => setOpen(false)}>
+              View all notifications
+              <Icon name="arrow-right" size={14} />
+            </Link>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -410,19 +605,10 @@ export default function AppShell({
           </div>
           <div className="erp-header-actions">
             <ChildSwitcher />
-            {notifPath ? (
-              <Link
-                to={notifPath}
-                className="erp-icon-btn erp-bell"
-                aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
-                title="Notifications"
-              >
-                <Icon name="bell" size={18} />
-                {unread > 0 ? (
-                  <span className="erp-bell-count">{unread > 99 ? '99+' : unread}</span>
-                ) : null}
-              </Link>
+            {user?.role === 'student' || user?.role === 'parent' || user?.role === 'tutor' ? (
+              <CurrencyChip className="erp-header-currency" />
             ) : null}
+            {notifPath ? <NotificationBell notifPath={notifPath} role={user?.role} /> : null}
             <ErpThemeToggle className="erp-topbar-theme" />
             <UserMenu
               user={user}

@@ -1,0 +1,39 @@
+/* Payments → Plans tab additions (decision #2): child picker + current plan summary. */
+.sp-plan-for {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0 0 1rem;
+}
+
+.sp-plan-current {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  margin: 0 0 1rem;
+  border: 1px solid var(--erp-border);
+  border-left: 3px solid var(--erp-accent);
+  border-radius: var(--erp-radius-md);
+  background: var(--erp-surface-muted, var(--erp-surface));
+  color: var(--erp-accent);
+}
+
+.sp-plan-current-off {
+  border-left-color: var(--erp-border-strong);
+  color: var(--erp-text-muted);
+}
+
+.sp-plan-current > div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.sp-plan-current strong {
+  color: var(--erp-text-primary);
+  font-size: var(--erp-font-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

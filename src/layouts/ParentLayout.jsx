@@ -8,6 +8,7 @@ const links = [
   { to: '/parent/tutors', label: 'Find tutors', icon: 'search', group: 'Learn' },
   { to: '/parent/courses', label: 'Courses', icon: 'book-open', group: 'Learn' },
   { to: '/parent/projects', label: 'Projects', icon: 'folder', group: 'Learn' },
+  { to: '/parent/resources', label: 'Resources', icon: 'file-text', group: 'Learn' },
   { to: '/parent/bookings', label: 'Bookings', icon: 'calendar', group: 'Schedule' },
   { to: '/parent/policy', label: 'Class policy', icon: 'shield-check', group: 'Schedule' },
   { to: '/parent/payments', label: 'Payments', icon: 'credit-card', group: 'Money' },

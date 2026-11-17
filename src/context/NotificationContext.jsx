@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
   notificationUnreadCount,
@@ -66,9 +67,19 @@ export function NotificationProvider({ children }) {
     return result;
   }, []);
 
+  // Latest few notifications for the header bell dropdown; also re-syncs the unread badge.
+  const loadRecent = useCallback(async (limit = 8) => {
+    const data = await listNotifications({ page: 1, limit });
+    if (typeof data?.unread === 'number') {
+      seq.current += 1;
+      setUnread(data.unread);
+    }
+    return data?.items || [];
+  }, []);
+
   const value = useMemo(
-    () => ({ unread, setUnread, refreshUnread, markRead, markAllRead }),
-    [unread, refreshUnread, markRead, markAllRead]
+    () => ({ unread, setUnread, refreshUnread, markRead, markAllRead, loadRecent }),
+    [unread, refreshUnread, markRead, markAllRead, loadRecent]
   );
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;
@@ -80,6 +91,7 @@ const FALLBACK = {
   refreshUnread: async () => null,
   markRead: (id) => markNotificationRead(id),
   markAllRead: () => markAllNotificationsRead(),
+  loadRecent: async (limit = 8) => (await listNotifications({ page: 1, limit }))?.items || [],
 };
 
 export function useNotifications() {

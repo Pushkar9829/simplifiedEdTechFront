@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { listHomework } from '../../api';
+import { addFavorite, listFavorites, listHomework, removeFavorite } from '../../api';
 import {
   ErpBanner,
   ErpButton,
@@ -20,7 +20,7 @@ import { errorMessage } from '../../utils/errors';
 import { useAuth } from '../../context/AuthContext';
 import { titleCase } from './studentOptions';
 import { formatWhen, timeUntil, viewerZone } from './studentTime';
-import { LinkButton } from './studentUi';
+import { FavButton, LinkButton } from './studentUi';
 import './student.css';
 
 const PAGE_SIZE = 25;
@@ -45,18 +45,36 @@ export default function StudentHomework() {
   const [tab, setTab] = useState('all');
   const [view, setView] = useState('list');
   const [search, setSearch] = useState('');
+  const [favOnly, setFavOnly] = useState(false);
+  const [favIds, setFavIds] = useState(() => new Set());
   const reqId = useRef(0);
+
+  const loadFavs = () =>
+    listFavorites('homework')
+      .then((rows) => {
+        const list = Array.isArray(rows) ? rows : rows?.items || [];
+        setFavIds(new Set(list.map((r) => String(r.targetId || r._id || r))));
+      })
+      .catch(() => {});
+
+  useEffect(() => {
+    loadFavs();
+  }, []);
 
   useEffect(() => {
     setPage(1);
-  }, [tab]);
+  }, [tab, favOnly]);
 
   useEffect(() => {
     const id = ++reqId.current;
     setLoading(true);
     setError('');
     Promise.all([
-      listHomework({ status: TAB_STATUS[tab] || '', page, limit: PAGE_SIZE }),
+      listHomework({
+        status: TAB_STATUS[tab] || '',
+        page: favOnly ? 1 : page,
+        limit: favOnly ? 100 : PAGE_SIZE,
+      }),
       listHomework({ page: 1, limit: 1 }),
       listHomework({ status: 'assigned', page: 1, limit: 1 }),
       listHomework({ status: 'submitted', page: 1, limit: 1 }),
@@ -79,16 +97,17 @@ export default function StudentHomework() {
       .finally(() => {
         if (id === reqId.current) setLoading(false);
       });
-  }, [tab, page]);
+  }, [tab, page, favOnly]);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return items.filter((h) => {
+      if (favOnly && !favIds.has(String(h._id))) return false;
       if (tab === 'overdue' && !isOverdue(h) && h.status !== 'overdue') return false;
       if (!q) return true;
       return [h.title, h.subjectId?.name, h.status].filter(Boolean).join(' ').toLowerCase().includes(q);
     });
-  }, [items, tab, search]);
+  }, [items, tab, search, favOnly, favIds]);
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -107,7 +126,7 @@ export default function StudentHomework() {
   );
 
   const pager =
-    total > PAGE_SIZE || (total > 0 && view === 'list') ? (
+    !favOnly && (total > PAGE_SIZE || (total > 0 && view === 'list')) ? (
       <ErpPager
         page={page}
         pages={pages}
@@ -130,6 +149,12 @@ export default function StudentHomework() {
       icon="clipboard-check"
       title="No assignments yet"
       description="When a tutor sets homework after a class, it will appear here."
+    />
+  ) : favOnly && !visible.length ? (
+    <ErpEmptyState
+      icon="heart"
+      title="No favourite assignments"
+      description="Tap the heart on an assignment to save it here."
     />
   ) : !items.length ? (
     <ErpEmptyState icon="check-circle" title="Nothing in this view" description="Try another tab to see the rest of your work." />
@@ -171,6 +196,15 @@ export default function StudentHomework() {
       <div className="st-filter-bar">
         <ErpSearch value={search} onChange={setSearch} placeholder="Search title or subject" />
         <div className="st-filter-bar-end">
+          <ErpSegmented
+            aria-label="Show"
+            value={favOnly ? 'fav' : 'all'}
+            options={[
+              { value: 'all', label: 'All' },
+              { value: 'fav', label: 'Favourites', icon: 'heart' },
+            ]}
+            onChange={(value) => setFavOnly(value === 'fav')}
+          />
           <ErpSegmented
             aria-label="View"
             value={view}
@@ -233,6 +267,18 @@ export default function StudentHomework() {
                       </div>
                     </div>
                     <div className="st-item-actions">
+                      <FavButton
+                        on={favIds.has(String(h._id))}
+                        onClick={async () => {
+                          try {
+                            if (favIds.has(String(h._id))) await removeFavorite('homework', h._id);
+                            else await addFavorite('homework', h._id);
+                            await loadFavs();
+                          } catch (err) {
+                            setError(errorMessage(err));
+                          }
+                        }}
+                      />
                       {todo ? (
                         <LinkButton to={`/student/homework/${h._id}`} variant={overdue ? 'primary' : 'secondary'} icon="upload">
                           Submit

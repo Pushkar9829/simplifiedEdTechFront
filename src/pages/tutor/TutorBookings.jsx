@@ -17,7 +17,7 @@ import {
   offerRescheduleSlots,
   saveSessionReport,
   setAttendance,
-  setMeetingStatus,
+  updateClassLinks,
 } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -55,6 +55,11 @@ import { gradeLabel, GRADING_SCHEME_OPTIONS } from '../../utils/grading';
 import { ATTENDANCE_OPTIONS, idOf, localTime } from './tutorOptions';
 import { errorMessage } from '../../utils/errors';
 import ClassToolsModal from '../../components/ClassToolsModal';
+import BookingEventModal, { CalendarButtons, ProofChip } from '../../components/BookingEventModal';
+import { bookingEventVariant, bookingTooltip, dualTime } from '../../components/bookingTime';
+import { ClassCodeDialog } from '../../components/ClassCode';
+import { nextCode } from '../../components/classCodeLogic';
+import CalendarFeedButton from '../../components/CalendarFeedPanel';
 import TutorRowMenu from './TutorRowMenu';
 import './tutor.css';
 
@@ -281,10 +286,96 @@ function AssignmentFields({ form, setForm }) {
   );
 }
 
+const LINK_FIELDS = ['meetingUrl', 'meetingPasscode', 'docsUrl', 'whiteboardUrl'];
+
+function linksFrom(b) {
+  return {
+    meetingUrl: b?.meetingUrl || '',
+    meetingPasscode: b?.meetingPasscode || '',
+    docsUrl: b?.classTools?.docsUrl || '',
+    whiteboardUrl: b?.classTools?.whiteboardUrl || '',
+  };
+}
+
+function badUrl(v) {
+  return v && !/^https?:\/\/\S+$/i.test(v.trim());
+}
+
+function ClassLinksEditor({ booking, onSaved, onError }) {
+  const [form, setForm] = useState(() => linksFrom(booking));
+  const [busy, setBusy] = useState(false);
+  const initial = linksFrom(booking);
+  const dirty = LINK_FIELDS.some((k) => form[k].trim() !== initial[k]);
+  const invalid = ['meetingUrl', 'docsUrl', 'whiteboardUrl'].find((k) => badUrl(form[k]));
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const save = async () => {
+    setBusy(true);
+    try {
+      const body = {};
+      LINK_FIELDS.forEach((k) => {
+        if (form[k].trim() !== initial[k]) body[k] = form[k].trim();
+      });
+      await updateClassLinks(booking._id, body);
+      onSaved?.();
+    } catch (err) {
+      onError?.(errorMessage(err, 'Could not save the links'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const online = booking.deliveryMode !== 'offline';
+  return (
+    <div className="bk-links-form">
+      {online && (
+        <div className="bk-links-row">
+          <ErpInput
+            label="Meeting link"
+            type="url"
+            inputMode="url"
+            placeholder="https://meet.google.com/…"
+            value={form.meetingUrl}
+            onChange={set('meetingUrl')}
+            helper="A live room is created automatically. Paste a Zoom / Meet / Teams URL only to override it."
+            error={badUrl(form.meetingUrl) ? 'Start with https://' : undefined}
+          />
+          <ErpInput label="Passcode" optional value={form.meetingPasscode} onChange={set('meetingPasscode')} />
+        </div>
+      )}
+      <ErpInput
+        label="Class notes"
+        type="url"
+        inputMode="url"
+        placeholder="https://docs.google.com/document/d/… or /pad/…"
+        value={form.docsUrl}
+        onChange={set('docsUrl')}
+        helper="Filled automatically with a shared notebook if you leave this empty."
+        error={badUrl(form.docsUrl) ? 'Start with https://' : undefined}
+      />
+      <ErpInput
+        label="Whiteboard"
+        type="url"
+        inputMode="url"
+        placeholder="https://excalidraw.com/… or Miro"
+        value={form.whiteboardUrl}
+        onChange={set('whiteboardUrl')}
+        helper="A shared Excalidraw board is created if you leave this empty."
+        error={badUrl(form.whiteboardUrl) ? 'Start with https://' : undefined}
+      />
+      <div className="row" style={{ justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <span className="muted text-erp-xs">
+          Student{online ? 's' : ''} see these before and after class. Set defaults for new bookings in your profile.
+        </span>
+        <ErpButton size="sm" icon="check" loading={busy} disabled={!dirty || Boolean(invalid)} onClick={save}>
+          Save links
+        </ErpButton>
+      </div>
+    </div>
+  );
+}
+
 const PAGE_SIZE = 20;
 const OPEN_CHANGE = ['pending', 'slots_offered', 'awaiting_replacement', 'awaiting_approval'];
 const RESCHEDULE_MIN_HOURS = 12;
-const LIVE_EARLY_MINUTES = 15;
 
 const CHANGE_STATUS_LABEL = {
   pending: 'Student asked to reschedule — waiting for your slots',
@@ -385,6 +476,9 @@ export default function TutorBookings() {
   const [confirm, setConfirm] = useState(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+  const [codeDialog, setCodeDialog] = useState(null);
+  const [eventBooking, setEventBooking] = useState(null);
+  const zone = user?.timezone || undefined;
 
   const load = useCallback(async () => {
     if (view === 'calendar' && !range) return;
@@ -557,11 +651,12 @@ export default function TutorBookings() {
       list.filtered.map((b) => ({
         id: b._id,
         start: b.startAt,
-        title: `${b.refCode || ''} ${studentName(b)} · ${b.subjectId?.name || ''} · ${b.status || ''}`.trim(),
-        variant: eventVariant(b),
+        title: `${studentName(b)} · ${b.subjectId?.name || ''}`.trim(),
+        tooltip: bookingTooltip(b, 'tutor', zone),
+        variant: bookingEventVariant(b) || eventVariant(b),
         booking: b,
       })),
-    [list.filtered]
+    [list.filtered, zone]
   );
 
   const askCancel = (b) =>
@@ -737,11 +832,18 @@ export default function TutorBookings() {
   const nowMs = Date.now();
   const started = selected ? new Date(selected.startAt).getTime() <= nowMs : false;
   const active = Boolean(selected && canChangeBooking(selected));
-  const liveOpen = selected
-    ? nowMs >= new Date(selected.startAt).getTime() - LIVE_EARLY_MINUTES * 60000
-    : false;
   const needsCheckIn = selected?.deliveryMode === 'offline' && !selected?.doorstep?.checkedInAt;
   const canComplete = active && started;
+  const proof = selected?.classProof || {};
+  const proofOk = Boolean((proof.startVerifiedAt && proof.endVerifiedAt) || proof.override);
+  const codeStep = selected ? nextCode(selected, nowMs) : { phase: null };
+  const completeWhy = !proofOk
+    ? proof.startVerifiedAt
+      ? 'Enter the end code from the student first'
+      : 'Enter the start and end codes from the student first'
+    : needsCheckIn
+      ? 'Check in at the door first'
+      : undefined;
   const selectedChange = selected ? openChangeFor(selected._id) : null;
   const classFiles = selected?.classHistory || [];
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -829,9 +931,12 @@ export default function TutorBookings() {
       <ErpPageHeader
         subtitle="Run each class from here: open class tools, mark attendance, then write the session summary."
         actions={
-          <ErpButton variant="secondary" icon="refresh" onClick={reloadAll} disabled={loading}>
-            Refresh
-          </ErpButton>
+          <>
+            <CalendarFeedButton />
+            <ErpButton variant="secondary" icon="refresh" onClick={reloadAll} disabled={loading}>
+              Refresh
+            </ErpButton>
+          </>
         }
       />
       {error && (
@@ -955,7 +1060,8 @@ export default function TutorBookings() {
             date={calDate}
             onDateChange={setCalDate}
             emptyMessage={list.noMatch ? 'No bookings match that search.' : 'No bookings in this period.'}
-            onEventClick={(e) => openBooking(e.booking)}
+            timeZone={zone}
+            onEventClick={(e) => setEventBooking(e.booking)}
             onRangeChange={(from, to) =>
               setRange((r) =>
                 r && r.from.getTime() === from.getTime() && r.to.getTime() === to.getTime() ? r : { from, to }
@@ -1014,8 +1120,10 @@ export default function TutorBookings() {
                       <span className="muted">
                         {b.subjectId?.name || 'Lesson'} · {localTime(b.startAt)}
                       </span>
+                      <span className="muted text-erp-xs">{dualTime(b, 'tutor', zone)}</span>
                       <span className="tutor-chips">
                         {modeChip(b)}
+                        <ProofChip booking={b} compact />
                         {paymentCell(b)}
                         {needsReport(b) && !b.sessionReportId ? (
                           <ErpBadge tone="warning" dot>
@@ -1062,13 +1170,19 @@ export default function TutorBookings() {
                           {modeChip(b)}
                         </span>
                       </td>
-                      <td className="erp-tabular">{localTime(b.startAt)}</td>
+                      <td className="erp-tabular">
+                        <span className="tutor-cell-stack">
+                          <span>{localTime(b.startAt)}</span>
+                          <span className="muted text-erp-xs">{dualTime(b, 'tutor', zone)}</span>
+                        </span>
+                      </td>
                       <td>
                         <span className="tutor-cell-stack">
                           <ErpStatusBadge status={b.status} dot>
                             {b.status}
                           </ErpStatusBadge>
                           {statusLine(b) ? <span className="muted text-erp-xs">Class {statusLine(b)}</span> : null}
+                          <ProofChip booking={b} compact />
                         </span>
                       </td>
                       <td>{paymentCell(b)}</td>
@@ -1123,15 +1237,27 @@ export default function TutorBookings() {
                     {selected.deliveryMode === 'offline' ? 'Check in' : 'Class tools'}
                   </ErpButton>
                 )}
-                {canComplete && (
+                {active && codeStep.phase && codeStep.state === 'open' && (
                   <ErpButton
-                    icon="check"
-                    disabled={needsCheckIn}
-                    title={needsCheckIn ? 'Check in at the door first' : undefined}
-                    onClick={() => openWizard('complete')}
+                    icon="lock"
+                    disabled={codeStep.phase === 'start' && needsCheckIn}
+                    title={codeStep.phase === 'start' && needsCheckIn ? 'Upload the doorstep photo first' : undefined}
+                    onClick={() => setCodeDialog({ booking: selected, phase: codeStep.phase })}
                   >
-                    Complete
+                    {codeStep.phase === 'start' ? 'Enter start code' : 'Enter end code'}
                   </ErpButton>
+                )}
+                {canComplete && !(codeStep.phase && codeStep.state === 'open') && (
+                  <span title={completeWhy} className="tutor-complete-wrap">
+                    <ErpButton
+                      icon="check"
+                      disabled={Boolean(completeWhy)}
+                      aria-label={completeWhy ? `Complete (disabled: ${completeWhy})` : 'Complete'}
+                      onClick={() => openWizard('complete')}
+                    >
+                      Complete
+                    </ErpButton>
+                  </span>
                 )}
               </span>
             </div>
@@ -1170,9 +1296,9 @@ export default function TutorBookings() {
                 {CHANGE_STATUS_LABEL[selectedChange.status] || selectedChange.status}
               </ErpBanner>
             )}
-            {canComplete && needsCheckIn && (
+            {active && needsCheckIn && (started || codeStep.state === 'open') && (
               <ErpBanner variant="info" icon="map-pin" title="Check in at the door first">
-                Open “Check in” and upload a door photo to enable Complete.
+                Open “Check in” and upload a door photo. Then enter the student’s start code.
               </ErpBanner>
             )}
 
@@ -1183,8 +1309,8 @@ export default function TutorBookings() {
                 <dd>{localTime(selected.startAt)}</dd>
                 <dt>Student time</dt>
                 <dd>
-                  {formatInZone(selected.startAt, selected.timezone)}{' '}
-                  <span className="muted">({selected.timezone})</span>
+                  {formatInZone(selected.startAt, selected.studentUserId?.timezone || selected.timezone)}{' '}
+                  <span className="muted">({selected.studentUserId?.timezone || selected.timezone})</span>
                 </dd>
                 <dt>Mode</dt>
                 <dd>{selected.deliveryMode === 'offline' ? 'Offline (at the student’s place)' : 'Online (Zoom)'}</dd>
@@ -1240,29 +1366,74 @@ export default function TutorBookings() {
                     Attendance can be marked once the class starts.
                   </p>
                 )}
-                {active && liveOpen && selected.meetingStatus !== 'live' && (
-                  <div style={{ marginTop: '0.75rem' }}>
-                    <ErpButton
-                      variant="secondary"
-                      size="sm"
-                      icon="video"
-                      disabled={actionBusy}
-                      onClick={async () => {
-                        setActionBusy(true);
-                        try {
-                          await setMeetingStatus(selected._id, 'live');
-                          refreshSelected();
-                        } catch (err) {
-                          setError(errorMessage(err));
-                        } finally {
-                          setActionBusy(false);
-                        }
-                      }}
-                    >
-                      Mark class live
-                    </ErpButton>
-                  </div>
+              </section>
+            )}
+
+            {selected.status !== 'cancelled' && !selected.consumed && (
+              <section className="erp-drawer-section">
+                <h4 className="tutor-section-head">
+                  Class codes
+                  <ProofChip booking={selected} />
+                </h4>
+                <div className="bk-code-steps" style={{ marginBottom: '0.6rem' }}>
+                  <span className={`bk-step${proof.startVerifiedAt ? ' is-done' : codeStep.phase === 'start' ? ' is-now' : ''}`}>
+                    {proof.startVerifiedAt ? <Icon name="check" size={12} /> : null}
+                    Start{proof.startVerifiedAt ? ` · ${localTime(proof.startVerifiedAt)}` : ''}
+                  </span>
+                  <span className={`bk-step${proof.endVerifiedAt ? ' is-done' : codeStep.phase === 'end' ? ' is-now' : ''}`}>
+                    {proof.endVerifiedAt ? <Icon name="check" size={12} /> : null}
+                    End{proof.endVerifiedAt ? ` · ${localTime(proof.endVerifiedAt)}` : ''}
+                  </span>
+                </div>
+                {proof.override ? (
+                  <p className="muted" style={{ margin: 0 }}>
+                    Admin override: {proof.override.reason}
+                  </p>
+                ) : proof.lockedUntil ? (
+                  <ErpBanner variant="warning" icon="lock">
+                    Too many wrong codes. Try again after {localTime(proof.lockedUntil)}.
+                  </ErpBanner>
+                ) : codeStep.phase && codeStep.state === 'open' ? (
+                  <p className="muted" style={{ margin: 0 }}>
+                    Ask the student for their {codeStep.phase} code and tap “Enter {codeStep.phase} code” below. Open
+                    until {localTime(codeStep.closesAt)}.
+                  </p>
+                ) : codeStep.phase && codeStep.state === 'waiting' ? (
+                  <p className="muted" style={{ margin: 0 }}>
+                    {codeStep.phase === 'start' ? 'Start' : 'End'} code opens at {localTime(codeStep.opensAt)}. The
+                    student sees it in their app.
+                  </p>
+                ) : codeStep.phase && codeStep.state === 'closed' ? (
+                  <p className="muted" style={{ margin: 0 }}>
+                    The {codeStep.phase} code window has closed. Ask admin to confirm this class.
+                  </p>
+                ) : (
+                  <p className="muted" style={{ margin: 0 }}>
+                    Both codes entered. You can complete the class.
+                  </p>
                 )}
+              </section>
+            )}
+
+            {selected.status !== 'cancelled' && (
+              <section className="erp-drawer-section">
+                <h4>Class links</h4>
+                <ClassLinksEditor
+                  key={`${selected._id}-${selected.updatedAt || ''}`}
+                  booking={selected}
+                  onSaved={() => {
+                    setMsg('Class links saved. The student was notified.');
+                    refreshSelected();
+                  }}
+                  onError={setError}
+                />
+              </section>
+            )}
+
+            {selected.status !== 'cancelled' && (
+              <section className="erp-drawer-section">
+                <h4>Add to calendar</h4>
+                <CalendarButtons booking={selected} role="tutor" />
               </section>
             )}
 
@@ -1731,6 +1902,54 @@ export default function TutorBookings() {
       </ErpModal>
 
       <ClassToolsModal open={Boolean(joinTools)} join={joinTools} onClose={() => setJoinTools(null)} />
+      <ClassCodeDialog
+        open={Boolean(codeDialog)}
+        booking={codeDialog?.booking}
+        phase={codeDialog?.phase}
+        onClose={() => setCodeDialog(null)}
+        onVerified={(r) => {
+          setCodeDialog(null);
+          setMsg(r?.phase === 'end' ? 'End code verified. You can complete the class now.' : 'Start code verified. The class is live.');
+          refreshSelected();
+        }}
+      />
+      <BookingEventModal
+        open={Boolean(eventBooking)}
+        booking={eventBooking}
+        role="tutor"
+        viewerZone={zone}
+        onClose={() => setEventBooking(null)}
+        actions={
+          eventBooking
+            ? [
+                (() => {
+                  const step = nextCode(eventBooking);
+                  return step.phase && step.state === 'open' && canChangeBooking(eventBooking)
+                    ? {
+                        label: step.phase === 'start' ? 'Enter start code' : 'Enter end code',
+                        icon: 'lock',
+                        variant: 'secondary',
+                        onClick: () => {
+                          const b = eventBooking;
+                          setEventBooking(null);
+                          setCodeDialog({ booking: b, phase: step.phase });
+                        },
+                      }
+                    : null;
+                })(),
+                {
+                  label: 'Open details',
+                  icon: 'eye',
+                  onClick: () => {
+                    const b = eventBooking;
+                    setEventBooking(null);
+                    openBooking(b);
+                  },
+                },
+              ].filter(Boolean)
+            : []
+        }
+      />
       <ErpModal
         open={Boolean(doorstep)}
         title="Doorstep check-in"

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createPlan, listPlans, updatePlan } from '../../api';
+import { adminListSubscriptions, createPlan, listPlans, updatePlan } from '../../api';
 import {
   ErpBanner,
   ErpButton,
@@ -15,7 +15,6 @@ import {
 import { errorMessage } from '../../utils/errors';
 import { useListFilter } from '../../hooks/useListFilter';
 import { money } from '../../utils/format';
-import { useCatalog } from '../../context/CatalogContext';
 import {
   AdminCell,
   AdminFormSection,
@@ -28,6 +27,28 @@ import {
 } from './AdminKit';
 import { PLAN_AUDIENCE_OPTIONS, titleCase } from './adminOptions';
 import { useAdminModalQuery } from './useAdminModalQuery';
+
+// Student plans (decision #2): each billing cycle is one credit period of N months.
+const CYCLE_MONTHS = { one_time: 1, monthly: 1, quarterly: 3, half_yearly: 6, yearly: 12 };
+const BILLING_OPTIONS = [
+  { value: 'one_time', label: 'One-time · 1 month, no renewal' },
+  { value: 'monthly', label: 'Monthly · 1 month, renews' },
+  { value: 'quarterly', label: 'Quarterly · 3 months, renews' },
+  { value: 'half_yearly', label: 'Half-yearly · 6 months, renews' },
+  { value: 'yearly', label: 'Yearly · 12 months, renews' },
+];
+const PLAN_KIND_OPTIONS = [
+  { value: 'single', label: 'Single class (1 credit)' },
+  { value: 'regular', label: 'Regular · weekly pack (e.g. 4 or 8 / month)' },
+  { value: 'subscription', label: 'Subscription · long-term credits' },
+];
+const KIND_LABEL = { single: 'Single', regular: 'Regular', subscription: 'Subscription', premium: 'Premium' };
+const monthsLabel = (cycle) => {
+  const m = CYCLE_MONTHS[cycle] || 1;
+  return `${m} month${m === 1 ? '' : 's'}`;
+};
+const shortDate = (d) =>
+  d ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
 const emptyForm = {
   name: '',
@@ -44,7 +65,6 @@ const emptyForm = {
 };
 
 function PlanForm({ id, onSaved, onCancel }) {
-  const { options } = useCatalog();
   const isEdit = Boolean(id);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
@@ -160,9 +180,13 @@ function PlanForm({ id, onSaved, onCancel }) {
         <ErpInput label="Price" type="number" min="0" step="0.01" value={form.price} onChange={set('price')} />
         <ErpInput label="Currency" value={form.currency} onChange={set('currency')} helper="ISO code, e.g. USD" />
         <ErpSelect
-          label="Billing cycle"
+          label="Billing cycle / period"
           value={form.billingCycle}
-          options={options('billing_cycle')}
+          options={
+            BILLING_OPTIONS.some((o) => o.value === form.billingCycle)
+              ? BILLING_OPTIONS
+              : [...BILLING_OPTIONS, { value: form.billingCycle, label: titleCase(form.billingCycle) }]
+          }
           onChange={set('billingCycle')}
         />
       </AdminFormSection>
@@ -175,15 +199,20 @@ function PlanForm({ id, onSaved, onCancel }) {
             <ErpSelect
               label="Student plan type"
               value={form.planKind}
-              options={options('plan_kind')}
-              onChange={set('planKind')}
+              options={PLAN_KIND_OPTIONS}
+              onChange={(e) => {
+                const kind = e.target.value;
+                setForm((f) => ({ ...f, planKind: kind, classCount: kind === 'single' ? 1 : f.classCount }));
+              }}
             />
             <ErpInput
-              label="Classes included"
+              label="Class credits per period"
               type="number"
               min="1"
+              max="500"
               value={form.classCount}
               onChange={set('classCount')}
+              helper={`Usable with any tutor for ${monthsLabel(form.billingCycle)}; unused credits expire.`}
             />
           </>
         ) : (
@@ -216,6 +245,102 @@ function PlanForm({ id, onSaved, onCancel }) {
         </ErpButton>
       </div>
     </form>
+  );
+}
+
+function SubscribersTable() {
+  const [rows, setRows] = useState(null);
+  const [status, setStatus] = useState('active');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    setRows(null);
+    adminListSubscriptions({ status, limit: 100 })
+      .then((d) => live && setRows(d?.items || []))
+      .catch((err) => {
+        if (!live) return;
+        setError(errorMessage(err));
+        setRows([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [status]);
+
+  return (
+    <>
+      <AdminToolbar right={rows ? <span className="adm-result-count">{rows.length} shown</span> : null}>
+        <ErpSelect
+          inline
+          aria-label="Filter by status"
+          value={status}
+          options={[
+            { value: 'active', label: 'Active' },
+            { value: 'expired', label: 'Expired' },
+            { value: 'cancelled', label: 'Cancelled' },
+            { value: '', label: 'All statuses' },
+          ]}
+          onChange={(e) => setStatus(e.target.value)}
+        />
+      </AdminToolbar>
+      {error ? <ErpBanner variant="danger">{error}</ErpBanner> : null}
+      {!rows || !rows.length ? (
+        <AdminListState
+          loading={!rows}
+          empty={Boolean(rows) && !rows.length}
+          emptyProps={{
+            icon: 'ticket',
+            title: 'No subscriptions here',
+            description: 'Student plans appear once their invoice is paid.',
+          }}
+        />
+      ) : (
+        <div className="erp-table-scroll">
+          <table className="erp-data-table adm-table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Plan</th>
+                <th className="num">Credits left</th>
+                <th>Period</th>
+                <th>Auto-renew</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((s) => (
+                <tr key={s._id}>
+                  <td className="adm-primary">
+                    <AdminCell
+                      title={s.studentUserId?.name || s.studentUserId?.phone || 'Student'}
+                      sub={
+                        s.payerUserId && s.payerUserId._id !== s.studentUserId?._id
+                          ? `Paid by ${s.payerUserId.name || s.payerUserId.role || 'parent'}`
+                          : s.studentUserId?.phone || null
+                      }
+                    />
+                  </td>
+                  <td data-label="Plan">
+                    <AdminCell title={s.planName || s.planId?.name || '—'} sub={KIND_LABEL[s.planKind] || null} />
+                  </td>
+                  <td className="num" data-label="Credits left">
+                    {s.creditsLeft} / {s.classesTotal}
+                  </td>
+                  <td data-label="Period" className="muted">
+                    {shortDate(s.periodStart)} – {shortDate(s.periodEnd)}
+                  </td>
+                  <td data-label="Auto-renew">{s.autoRenew ? 'On' : 'Off'}</td>
+                  <td data-label="Status">
+                    <AdminStatus status={s.status} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -279,10 +404,12 @@ export default function AdminPlansPage() {
               { value: 'all', label: 'All', count: items.length || null },
               { value: 'active', label: 'Active', count: activeCount || null },
               { value: 'inactive', label: 'Inactive', count: items.length - activeCount || null },
+              { value: 'subscribers', label: 'Student subscriptions' },
             ]}
           />
         }
         toolbar={
+          tab === 'subscribers' ? null : (
           <AdminToolbar
             right={
               !loading ? (
@@ -301,10 +428,13 @@ export default function AdminPlansPage() {
               onChange={(e) => setAudience(e.target.value)}
             />
           </AdminToolbar>
+          )
         }
-        footer={list.pages > 1 ? <ErpPager {...list.pagerProps} noun="plan" /> : null}
+        footer={tab !== 'subscribers' && list.pages > 1 ? <ErpPager {...list.pagerProps} noun="plan" /> : null}
       >
-        {loading || !visible.length || list.noMatch ? (
+        {tab === 'subscribers' ? (
+          <SubscribersTable />
+        ) : loading || !visible.length || list.noMatch ? (
           <AdminListState
             loading={loading}
             empty={!visible.length}
@@ -352,8 +482,8 @@ export default function AdminPlansPage() {
                           ? `+${p.rankBoost} search rank`
                           : '—'
                         : `${p.classCount || 1} class${(p.classCount || 1) === 1 ? '' : 'es'}${
-                            p.planKind ? ` · ${titleCase(p.planKind)}` : ''
-                          }`}
+                            p.planKind ? ` · ${KIND_LABEL[p.planKind] || titleCase(p.planKind)}` : ''
+                          } · ${monthsLabel(p.billingCycle)}`}
                     </td>
                     <td className="num" data-label="Price">
                       <AdminCell title={<span className="adm-money">{money(p.price, p.currency)}</span>} sub={titleCase(p.billingCycle)} />

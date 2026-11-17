@@ -22,6 +22,23 @@ import { formatWhen, viewerZone } from '../student/studentTime';
 import { childIdOf, summarize, useChildDashboards } from './parentData';
 import './parent.css';
 
+// DOB is a calendar date stored at UTC midnight; never shift it by the viewer's zone.
+function dobText(v) {
+  const d = new Date(v);
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+const DETAILS_GRID = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+  gap: '0.5rem 1rem',
+  margin: 0,
+};
+const DETAILS_DT = { fontSize: 'var(--erp-font-xs)', color: 'var(--erp-text-muted)' };
+const DETAILS_DD = { margin: 0, fontSize: 'var(--erp-font-sm)', color: 'var(--erp-text-primary)', overflowWrap: 'anywhere' };
+
 function ChildCard({ link, entry, selected, zone, onGo }) {
   const s = summarize(entry?.data);
   const name = childLabel(link);
@@ -29,6 +46,9 @@ function ChildCard({ link, entry, selected, zone, onGo }) {
   const status = link.status || 'active';
   const next = s?.nextClass;
   const value = (v) => (entry?.error ? '—' : s ? v : '…');
+  const details = link.childDetails || null;
+  const ec = details?.emergencyContact || {};
+  const emergency = ec.name || ec.phone ? ec : null;
 
   return (
     <article className={`erp-card pc-card${selected ? ' is-selected' : ''}`}>
@@ -71,6 +91,29 @@ function ChildCard({ link, entry, selected, zone, onGo }) {
           </span>
         </div>
       </div>
+
+      {details ? (
+        <dl style={DETAILS_GRID}>
+          <div>
+            <dt style={DETAILS_DT}>Date of birth</dt>
+            <dd style={DETAILS_DD}>
+              {details.dateOfBirth
+                ? `${dobText(details.dateOfBirth)}${details.age != null ? ` · age ${details.age}` : ''}`
+                : 'Not set'}
+            </dd>
+          </div>
+          <div>
+            <dt style={DETAILS_DT}>Emergency contact</dt>
+            <dd style={DETAILS_DD}>
+              {emergency
+                ? [emergency.name, emergency.relationship ? `(${titleCase(emergency.relationship)})` : '', emergency.phone]
+                    .filter(Boolean)
+                    .join(' ')
+                : 'Not added'}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
 
       <div className="pc-next">
         <Icon name="calendar" size={15} />

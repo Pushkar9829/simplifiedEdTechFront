@@ -564,3 +564,15 @@
     min-height: 40px;
   }
 }
+
+/* Block notice under the thread header */
+.sp-thread-blocked {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  border-bottom: 1px solid var(--erp-divider);
+  background: var(--erp-surface-muted);
+  color: var(--erp-text-muted);
+  font-size: var(--erp-font-sm);
+}

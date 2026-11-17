@@ -69,6 +69,7 @@ import AdminTicketsPage from './pages/admin/AdminTicketsPage';
 import AdminSettingsPage from './pages/admin/AdminSettingsPage';
 import AdminBookingsPage from './pages/admin/AdminBookingsPage';
 import SupportPage from './pages/shared/SupportPage';
+import ClassPadPage from './pages/shared/ClassPadPage';
 import NotFoundPage from './pages/shared/NotFoundPage';
 
 function HomeRedirect() {
@@ -82,6 +83,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/pad/:token" element={<ClassPadPage />} />
       <Route path="/" element={<HomeRedirect />} />
 
       <Route element={<ProtectedRoute roles={['student']} />}>
@@ -155,6 +157,7 @@ export default function App() {
           <Route path="policy" element={<StudentClassPolicy />} />
           <Route path="projects" element={<StudentProjects />} />
           <Route path="courses" element={<StudentCourses />} />
+          <Route path="resources" element={<StudentResources />} />
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="wallet" element={<WalletPage />} />
           <Route path="messages" element={<MessagesPage />} />

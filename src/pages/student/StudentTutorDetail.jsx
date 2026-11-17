@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import {
-  addFavoriteTutor,
+  addFavoriteTutorFor,
   addTutorReview,
   createBooking,
   enrollCourse,
-  getTutor,
+  getTutorFor,
   listCourses,
-  removeFavoriteTutor,
+  removeFavoriteTutorFor,
 } from '../../api';
+import BlockUserButton from '../shared/BlockUserButton';
+import PlanCreditsOption from '../../components/PlanCreditsOption';
+import { CalendarButtons } from '../../components/BookingEventModal';
 import {
   ErpBanner,
   ErpButton,
@@ -22,7 +25,8 @@ import {
   ErpTextarea,
   Icon,
 } from '../../components/erp';
-import { formatPlace, money, tutorRef } from '../../utils/format';
+import { formatPlace, tutorRef } from '../../utils/format';
+import { useDisplayMoney } from '../../utils/displayMoney';
 import { errorMessage } from '../../utils/errors';
 import { mediaUrl } from '../../utils/mediaUrl';
 import { useCatalog } from '../../context/CatalogContext';
@@ -59,6 +63,47 @@ function firstSlotFor(availability, mode) {
   );
 }
 
+/** Only plain web links are rendered from tutor-entered URLs. */
+function safeUrl(value) {
+  const v = String(value || '').trim();
+  if (!v) return '';
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(v) ? v : `https://${v}`;
+  try {
+    const u = new URL(withScheme);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function linkIcon(label, url) {
+  const t = `${label} ${url}`.toLowerCase();
+  if (/youtube|youtu\.be|vimeo/.test(t)) return 'video';
+  if (/linkedin/.test(t)) return 'user';
+  if (/drive\.google|docs\.google|folder/.test(t)) return 'folder';
+  return 'globe';
+}
+
+/** Clock time with zone abbreviation, e.g. "12:00 PM GMT". */
+function clockIn(value, timeZone) {
+  try {
+    return new Date(value).toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: timeZone || undefined,
+      timeZoneName: 'short',
+    });
+  } catch {
+    return '';
+  }
+}
+
+/** True when two zones show a different wall-clock time for this instant. */
+function zonesDiffer(value, a, b) {
+  if (!a || !b || a === b) return false;
+  return clockIn(value, a) !== clockIn(value, b);
+}
+
 function Stars({ value }) {
   const n = Math.round(Number(value) || 0);
   return (
@@ -83,6 +128,7 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
   const { options } = useCatalog();
   const { user, profile } = useAuth();
   const zone = viewerZone(user);
+  const fmtMoney = useDisplayMoney();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState('about');
   const [bookOpen, setBookOpen] = useState(false);
@@ -91,6 +137,7 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
   const [level, setLevel] = useState('HL');
   const [recurring, setRecurring] = useState(false);
   const [planType, setPlanType] = useState('single');
+  const [useCredits, setUseCredits] = useState(false);
   const [deliveryMode, setDeliveryMode] = useState('online');
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
@@ -107,7 +154,7 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
   const [reviewBusy, setReviewBusy] = useState(false);
 
   const load = async ({ initial = false } = {}) => {
-    const t = await getTutor(id);
+    const t = await getTutorFor(id, studentUserId ? { studentUserId } : {});
     setData(t);
     if (!initial) return;
     if (t.subjects?.[0]) {
@@ -225,16 +272,39 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
   const planOptions = options('plan_kind').filter((o) => !regularOnly || o.value !== 'single');
   const forceRecurring = planType === 'regular';
   const setAddr = (key) => (e) => setAddress((a) => ({ ...a, [key]: e.target.value }));
-  const slotLabel = (s) =>
-    `${formatWhen(s.startAt, zone)}${s.deliveryMode ? ` · ${s.deliveryMode}` : ''}${
+  const slotLabel = (s) => {
+    const other = tutorClock(s) ? ` (${tutorClock(s)})` : '';
+    return `${formatWhen(s.startAt, zone)}${other}${s.deliveryMode ? ` · ${s.deliveryMode}` : ''}${
       isSlotBookable(s) ? '' : ' (inside 12h)'
     }`;
+  };
   const modeOptions = options('delivery_mode').filter((o) => {
     if (p.teachingMode === 'online') return o.value === 'online';
     if (p.teachingMode === 'offline') return o.value === 'offline';
     return true;
   });
   const avgRating = Number(p.ratingAvg || 0);
+  const blocked = Boolean(data.blockedByMe);
+  const tutorZone = u.timezone || '';
+  const tutorClock = (s) => {
+    const tz = tutorZone || (s?.timezone && s.timezone !== 'UTC' ? s.timezone : '');
+    return zonesDiffer(s.startAt, zone, tz) ? `tutor ${clockIn(s.startAt, tz)}` : '';
+  };
+  const links = (p.profileLinks || [])
+    .map((l) => ({ label: String(l?.label || '').trim(), url: safeUrl(l?.url) }))
+    .filter((l) => l.url);
+  const introUrl = safeUrl(p.introPageUrl);
+  const docUrl = safeUrl(p.defaultDocUrl);
+  const boardUrl = safeUrl(p.defaultWhiteboardUrl);
+  const priceLine = (amount, currency) => {
+    const m = fmtMoney(amount, currency);
+    return (
+      <>
+        {m.primary}
+        {m.approx ? <span className="erp-price-approx">{m.approx}</span> : null}
+      </>
+    );
+  };
 
   const tabs = [
     { value: 'about', label: 'About' },
@@ -261,14 +331,24 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
     setMsg('');
     setFavBusy(true);
     try {
-      if (data.favorite) await removeFavoriteTutor(id);
-      else await addFavoriteTutor(id);
+      if (data.favorite) await removeFavoriteTutorFor(id, studentUserId);
+      else await addFavoriteTutorFor(id, studentUserId);
       await load();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setFavBusy(false);
     }
+  };
+
+  const onBlockChange = async (nowBlocked) => {
+    setError('');
+    setMsg(
+      nowBlocked
+        ? `${tutorRef(u)} is blocked. They are hidden from search and cannot message or book with you.`
+        : `${tutorRef(u)} is unblocked.`
+    );
+    await load().catch((err) => setError(errorMessage(err)));
   };
 
   const onBook = async () => {
@@ -288,6 +368,8 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
         planType,
         isRecurring,
         recurrenceCount: isRecurring ? 4 : 1,
+        // A long-term subscription is always paid from plan credits.
+        ...(useCredits || planType === 'subscription' ? { useCredits: true } : {}),
         ...(deliveryMode === 'offline' ? { studentAddress: address } : {}),
         ...(studentUserId ? { studentUserId } : {}),
       });
@@ -296,6 +378,8 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
         startAt: first?.startAt || selectedSlot?.startAt,
         count: res?.bookings?.length || 1,
         paymentId: res?.payments?.[0]?._id,
+        paidWithCredits: !res?.payments?.length,
+        booking: first,
       });
       setBookOpen(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -322,13 +406,23 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
             childName ? ` for ${childName}` : ''
           }`}
           actions={
-            <LinkButton to={payPath} state={booked.paymentId ? { paymentId: booked.paymentId } : undefined} size="sm" icon="credit-card">
-              Pay now
-            </LinkButton>
+            booked.paidWithCredits ? null : (
+              <LinkButton to={payPath} state={booked.paymentId ? { paymentId: booked.paymentId } : undefined} size="sm" icon="credit-card">
+                Pay now
+              </LinkButton>
+            )
           }
           onDismiss={() => setBooked(null)}
         >
-          Starts {formatWhen(booked.startAt, zone)}. Pay the invoice to confirm the session.
+          Starts {formatWhen(booked.startAt, zone)}.{' '}
+          {booked.paidWithCredits
+            ? 'Paid with plan credits — nothing more to pay.'
+            : 'Pay the invoice to confirm the session.'}
+          {booked.booking ? (
+            <div style={{ marginTop: '0.5rem' }}>
+              <CalendarButtons booking={booked.booking} role={studentUserId ? 'parent' : 'student'} />
+            </div>
+          ) : null}
         </ErpBanner>
       )}
       {msg && (
@@ -339,6 +433,15 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
       {error && (
         <ErpBanner variant="danger" onDismiss={() => setError('')}>
           {error}
+        </ErpBanner>
+      )}
+      {blocked && (
+        <ErpBanner
+          variant="warning"
+          title="You blocked this tutor"
+          actions={<BlockUserButton userId={id} name={tutorRef(u)} blocked onChange={onBlockChange} />}
+        >
+          {data.blockReason ? `Reason: ${data.blockReason}. ` : ''}Booking and messages are off until you unblock.
         </ErpBanner>
       )}
 
@@ -421,7 +524,12 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
                   <dt>Experience</dt>
                   <dd>{p.experienceYears || 0} years</dd>
                   <dt>Time zone</dt>
-                  <dd>{[u.timezone, p.currency].filter(Boolean).join(' · ') || '—'}</dd>
+                  <dd>
+                    {u.timezone || '—'}
+                    {zone && u.timezone && zone !== u.timezone ? ` · your time is ${zone}` : ''}
+                  </dd>
+                  <dt>Currency</dt>
+                  <dd>{p.currency || '—'}</dd>
                   {showOfflinePlace && (
                     <>
                       <dt>Offline location</dt>
@@ -431,7 +539,62 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
                       </dd>
                     </>
                   )}
+                  {(p.areasServed || []).length > 0 && (
+                    <>
+                      <dt>Areas served</dt>
+                      <dd>{p.areasServed.join(', ')}</dd>
+                    </>
+                  )}
                 </dl>
+                <div className="st-tutor-links">
+                  <p className="erp-section-title">Class tools &amp; source accounts</p>
+                  <p className="muted" style={{ margin: 0 }}>
+                    Public links the tutor has published. Each booked class also gets a live room, shared
+                    notes and a whiteboard in Bookings → Class tools — even if nothing is listed here.
+                  </p>
+                  <div className="st-tutor-links-list">
+                    {docUrl ? (
+                      <a className="st-tutor-link is-intro" href={docUrl} target="_blank" rel="noopener noreferrer nofollow">
+                        <Icon name="file-text" size={16} />
+                        <span>Shared Google Doc</span>
+                        <Icon name="external-link" size={14} />
+                      </a>
+                    ) : (
+                      <span className="muted">
+                        No public Google Doc on this profile. A shared class notebook is created automatically when you
+                        book.
+                      </span>
+                    )}
+                    {boardUrl ? (
+                      <a className="st-tutor-link" href={boardUrl} target="_blank" rel="noopener noreferrer nofollow">
+                        <Icon name="layers" size={16} />
+                        <span>Whiteboard</span>
+                        <Icon name="external-link" size={14} />
+                      </a>
+                    ) : null}
+                    {introUrl && (
+                      <a className="st-tutor-link is-intro" href={introUrl} target="_blank" rel="noopener noreferrer nofollow">
+                        <Icon name="file-text" size={16} />
+                        <span>Intro page</span>
+                        <Icon name="external-link" size={14} />
+                      </a>
+                    )}
+                    {links.map((l, i) => (
+                      <a
+                        key={`${l.url}-${i}`}
+                        className="st-tutor-link"
+                        href={l.url}
+                        target="_blank"
+                        rel="noopener noreferrer nofollow"
+                        title={l.url}
+                      >
+                        <Icon name={linkIcon(l.label, l.url)} size={16} />
+                        <span>{l.label || new URL(l.url).hostname.replace(/^www\./, '')}</span>
+                        <Icon name="external-link" size={14} />
+                      </a>
+                    ))}
+                  </div>
+                </div>
               </div>
             </ErpCard>
           )}
@@ -457,13 +620,13 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
                       <div className="st-price-row" style={{ display: 'flex', gap: '0.5rem' }}>
                         {teachesOnline && (
                           <div className="st-price-box">
-                            <strong>{money(s.onlineRate || s.hourlyRate || p.hourlyRate, s.currency || p.currency)}</strong>
+                            <strong>{priceLine(s.onlineRate || s.hourlyRate || p.hourlyRate, s.currency || p.currency)}</strong>
                             <span>Online / hr</span>
                           </div>
                         )}
                         {teachesOffline && (
                           <div className="st-price-box">
-                            <strong>{money(s.offlineRate || s.hourlyRate || p.hourlyRate, s.currency || p.currency)}</strong>
+                            <strong>{priceLine(s.offlineRate || s.hourlyRate || p.hourlyRate, s.currency || p.currency)}</strong>
                             <span>Offline / hr</span>
                           </div>
                         )}
@@ -478,7 +641,9 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
           {tab === 'availability' && (
             <ErpCard
               heading="Open slots"
-              description={`Book at least 12 hours ahead. Times in ${zone || 'your local time'}.`}
+              description={`Book at least 12 hours ahead. Times in ${zone || 'your local time'}${
+                tutorZone && tutorZone !== zone ? `; tutor is in ${tutorZone}` : ''
+              }.`}
             >
               {!openSlots.length ? (
                 <ErpEmptyState
@@ -493,12 +658,13 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
                       key={s._id}
                       type="button"
                       className="st-slot"
-                      disabled={!isSlotBookable(s)}
+                      disabled={!isSlotBookable(s) || blocked}
                       onClick={() => openBooking(s.deliveryMode || deliveryMode, s._id)}
                       title={isSlotBookable(s) ? 'Book this slot' : 'Inside the 12-hour notice window'}
                     >
                       <span>
                         <span className="st-slot-time">{formatWhen(s.startAt, zone)}</span>
+                        {tutorClock(s) ? <span className="st-slot-other">{tutorClock(s)}</span> : null}
                         <span className="st-slot-sub">
                           {titleCase(s.deliveryMode || 'online')}
                           {isSlotBookable(s) ? ` · ${timeUntil(s.startAt)}` : ' · inside 12h'}
@@ -530,7 +696,7 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
                           <span>{c.lessonPlanIds?.length || 0} lessons</span>
                           <span>
                             <strong style={{ color: 'var(--erp-text-primary)' }}>
-                              {c.price ? money(c.price, c.currency) : 'Free'}
+                              {c.price ? priceLine(c.price, c.currency) : 'Free'}
                             </strong>
                           </span>
                         </p>
@@ -705,11 +871,11 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
               </div>
               <div className="st-price-row">
                 <div className={`st-price-box${teachesOnline ? '' : ' is-off'}`}>
-                  <strong>{teachesOnline ? money(onlineRate, p.currency) : '—'}</strong>
+                  <strong>{teachesOnline ? priceLine(onlineRate, p.currency) : '—'}</strong>
                   <span>Online / hr</span>
                 </div>
                 <div className={`st-price-box${teachesOffline ? '' : ' is-off'}`}>
-                  <strong>{teachesOffline ? money(offlineRate, p.currency) : '—'}</strong>
+                  <strong>{teachesOffline ? priceLine(offlineRate, p.currency) : '—'}</strong>
                   <span>Offline / hr</span>
                 </div>
               </div>
@@ -719,6 +885,7 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
                   <span>
                     <strong>Next open slot</strong>
                     {formatWhen(nextSlot.startAt, zone)}
+                    {tutorClock(nextSlot) ? <small className="st-slot-other">{tutorClock(nextSlot)}</small> : null}
                   </span>
                 </div>
               ) : (
@@ -727,7 +894,7 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
                 </p>
               )}
               <div className="stack" style={{ gap: '0.5rem' }}>
-                <ErpButton block size="lg" icon="calendar" onClick={() => openBooking()}>
+                <ErpButton block size="lg" icon="calendar" disabled={blocked} onClick={() => openBooking()}>
                   {bookLabel}
                 </ErpButton>
                 <ErpButton
@@ -741,6 +908,13 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
                 >
                   {data.favorite ? 'Saved to favourites' : 'Save to favourites'}
                 </ErpButton>
+                <BlockUserButton
+                  userId={id}
+                  name={tutorRef(u)}
+                  blocked={blocked}
+                  onChange={onBlockChange}
+                  className="st-block-btn"
+                />
               </div>
               {regularOnly && (
                 <p className="muted" style={{ margin: 0 }}>
@@ -768,7 +942,7 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
             {Number.isFinite(fromRate) ? (
               <>
                 <small>from </small>
-                {money(fromRate, p.currency)}
+                {fmtMoney(fromRate, p.currency).primary}
                 <small> /hr</small>
               </>
             ) : (
@@ -776,7 +950,7 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
             )}
           </span>
         </div>
-        <ErpButton icon="calendar" onClick={() => openBooking()}>
+        <ErpButton icon="calendar" disabled={blocked} onClick={() => openBooking()}>
           {regularOnly ? 'Book lessons' : 'Book'}
         </ErpButton>
       </div>
@@ -863,7 +1037,9 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
                       <span>
                         <strong style={{ fontWeight: 600 }}>{o.label}</strong>
                         <small>
-                          {money(rate, p.currency)} / hr{o.value === 'offline' ? ' · at your address' : ' · video class'}
+                          {fmtMoney(rate, p.currency).primary} / hr
+                          {fmtMoney(rate, p.currency).approx ? ` (${fmtMoney(rate, p.currency).approx})` : ''}
+                          {o.value === 'offline' ? ' · at your address' : ' · video class'}
                         </small>
                       </span>
                     </button>
@@ -898,6 +1074,7 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
                   const next = e.target.value;
                   setPlanType(next);
                   if (next === 'regular') setRecurring(true);
+                  if (next === 'subscription') setUseCredits(true);
                 }}
               />
               <div className="field" style={{ justifyContent: 'flex-end' }}>
@@ -917,6 +1094,15 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
                 Weekly repeats are included with regular lessons.
               </p>
             )}
+            <PlanCreditsOption
+              studentUserId={studentUserId || undefined}
+              classes={recurring || forceRecurring ? 4 : 1}
+              checked={useCredits || planType === 'subscription'}
+              onChange={(use) => {
+                setUseCredits(use);
+                if (!use && planType === 'subscription') setPlanType('regular');
+              }}
+            />
           </div>
 
           {deliveryMode === 'offline' && (

@@ -73,7 +73,11 @@ export default function ParentTutors() {
         }
       />
       {selectedChildId ? (
-        <StudentTutors profileBase={`/parent/tutors/${selectedChildId}`} />
+        <StudentTutors
+          key={selectedChildId}
+          profileBase={`/parent/tutors/${selectedChildId}`}
+          studentUserId={selectedChildId}
+        />
       ) : (
         <ErpCard>
           <ErpEmptyState icon="user" title="Select a child to search tutors" />

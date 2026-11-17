@@ -3245,3 +3245,49 @@
     margin-left: 44px;
   }
 }
+
+/* ── Discovery: preferred-currency chip + "≈ converted" price hint ── */
+.erp-currency-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  background: var(--erp-surface-muted);
+  color: var(--erp-text-secondary, var(--erp-text-primary));
+  border: 1px solid var(--erp-border);
+}
+.erp-currency-chip:hover {
+  border-color: var(--erp-accent);
+  color: var(--erp-accent);
+}
+.erp-currency-chip.is-empty {
+  border-style: dashed;
+  color: var(--erp-accent);
+}
+:is(.erp-theme-bento, .erp-theme-bento-body) .erp-currency-chip {
+  background: var(--bt-sky);
+  color: var(--bt-sky-i);
+  border-color: transparent;
+}
+:is(.erp-theme-bento, .erp-theme-bento-body) .erp-currency-chip.is-empty {
+  background: var(--bt-white);
+  color: var(--bt-brand);
+  border: 1px dashed var(--bt-brand);
+}
+.erp-price-approx {
+  display: block;
+  font-size: var(--erp-font-xs, 12px);
+  font-weight: 500;
+  color: var(--erp-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.erp-price-approx.is-inline {
+  display: inline;
+  margin-left: 0.375rem;
+}

@@ -129,7 +129,13 @@ export default function TutorEarnings() {
         <ErpStat
           label="Lifetime share"
           value={show(summary?.lifetime)}
-          hint={summary?.lifetimeGross != null ? `Gross ${money(summary.lifetimeGross, cur)}` : undefined}
+          hint={
+            summary?.planClasses?.count
+              ? `Incl. ${money(summary.planClasses.lifetime, cur)} from ${summary.planClasses.count} plan class${summary.planClasses.count === 1 ? '' : 'es'}`
+              : summary?.lifetimeGross != null
+                ? `Gross ${money(summary.lifetimeGross, cur)}`
+                : undefined
+          }
           icon="award"
         />
         <ErpStat

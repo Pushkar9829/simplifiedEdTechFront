@@ -81,6 +81,26 @@ export const sendBookingFeedback = (id, body) => apiPost(`/api/bookings/${id}/fe
 export const getBookingSummary = (id) => apiGet(`/api/bookings/${id}/summary`);
 export const getBookingChain = (id) => apiGet(`/api/bookings/${id}/chain`);
 export const getStudentInsights = (studentId) => apiGet(`/api/bookings/students/${studentId}/insights`);
+// Bookings: class codes (#1), class links (#7), calendar (#6)
+export const getClassCode = (id, phase = 'start') => apiGet(`/api/bookings/${id}/class-code?phase=${phase}`);
+export const verifyClassCode = (id, phase, code) => apiPost(`/api/bookings/${id}/class-code/verify`, { phase, code });
+export const overrideClassProof = (id, reason) => apiPost(`/api/bookings/${id}/class-proof/override`, { reason });
+export const updateClassLinks = (id, body) => apiPatch(`/api/bookings/${id}/class-links`, body);
+export const getCalendarFeed = () => apiGet('/api/bookings/calendar/token');
+export const rotateCalendarFeed = () => apiPost('/api/bookings/calendar/token', {});
+export const revokeCalendarFeed = () => apiDelete('/api/bookings/calendar/token');
+/** Authenticated .ics download (the JSON client cannot return a file). Resolves to a Blob. */
+export const downloadBookingIcs = async (id) => {
+  const token = localStorage.getItem('ibdp_token');
+  const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/bookings/${id}/ics`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.message || `Download failed (${res.status})`);
+  }
+  return res.blob();
+};
 
 export const qs = (params = {}) => {
   const q = new URLSearchParams(
@@ -136,9 +156,12 @@ export const createResource = (bodyOrFormData) => {
   }
   return apiPost('/api/resources', bodyOrFormData);
 };
-export const bookmarkResource = (id) => apiPost(`/api/resources/${id}/bookmark`, {});
-export const unbookmarkResource = (id) => apiDelete(`/api/resources/${id}/bookmark`);
-export const myBookmarks = () => apiGet('/api/resources/bookmarks/me');
+export const bookmarkResource = (id, studentUserId) =>
+  apiPost(`/api/resources/${id}/bookmark`, studentUserId ? { studentUserId } : {});
+export const unbookmarkResource = (id, studentUserId) =>
+  apiDelete(`/api/resources/${id}/bookmark${studentUserId ? `?studentUserId=${studentUserId}` : ''}`);
+export const myBookmarks = (studentUserId) =>
+  apiGet(`/api/resources/bookmarks/me${studentUserId ? `?studentUserId=${studentUserId}` : ''}`);
 export const deleteResource = (id) => apiDelete(`/api/resources/${id}`);
 
 export const listHomework = (params = {}) => {
@@ -183,7 +206,13 @@ export const listPayable = (params = {}) => apiGet(`/api/payments/payable${qs(pa
 export const paymentHistory = (params = {}) => apiGet(`/api/payments/history${qs(params)}`);
 export const payInvoice = (id, method = 'manual') => apiPost(`/api/payments/${id}/pay`, { method });
 export const listPlans = () => apiGet('/api/payments/plans');
-export const subscribePlan = (planId) => apiPost('/api/payments/subscribe', { planId });
+export const subscribePlan = (planId, studentUserId) =>
+  apiPost('/api/payments/subscribe', studentUserId ? { planId, studentUserId } : { planId });
+// Student plans (credits usable with any tutor).
+export const getMySubscription = (params = {}) => apiGet(`/api/subscriptions/me${qs(params)}`);
+export const setSubscriptionAutoRenew = (id, autoRenew) =>
+  apiPost(`/api/subscriptions/${id}/auto-renew`, { autoRenew });
+export const adminListSubscriptions = (params = {}) => apiGet(`/api/subscriptions/admin${qs(params)}`);
 export const tutorEarnings = (params = {}) => apiGet(`/api/payments/earnings${qs(params)}`);
 export const tutorEarningsSummary = () => apiGet('/api/payments/earnings/summary');
 
@@ -309,3 +338,36 @@ export const analyticsTutor = (tutorId) => apiGet(`/api/analytics/tutors/${tutor
 
 export const adminGetPayment = (id) => apiGet(`/api/admin/payments/${id}`);
 export const getSubject = (id) => apiGet(`/api/subjects/${id}`);
+
+// Discovery: favourites for a linked child (parents), FX rates, offering edits.
+export const getTutorFor = (id, params = {}) => apiGet(`/api/tutors/${id}${qs(params)}`);
+export const addFavoriteTutorFor = (id, studentUserId) =>
+  apiPost(`/api/tutors/${id}/favorite${qs(studentUserId ? { studentUserId } : {})}`, {});
+export const removeFavoriteTutorFor = (id, studentUserId) =>
+  apiDelete(`/api/tutors/${id}/favorite${qs(studentUserId ? { studentUserId } : {})}`);
+export const listFavoritesFor = (kind, studentUserId) =>
+  apiGet(`/api/favorites${qs({ ...(kind ? { kind } : {}), ...(studentUserId ? { studentUserId } : {}) })}`);
+export const addFavoriteFor = (kind, targetId, studentUserId) =>
+  apiPost('/api/favorites', { kind, targetId, ...(studentUserId ? { studentUserId } : {}) });
+export const removeFavoriteFor = (kind, targetId, studentUserId) =>
+  apiDelete(`/api/favorites/${kind}/${targetId}${qs(studentUserId ? { studentUserId } : {})}`);
+export const getFxRates = () => apiGet('/api/catalog/fx');
+export const saveFxRates = (quotes) => api('/api/catalog/fx', { method: 'PUT', body: { quotes } });
+export const updateOffering = (id, body) => apiPatch(`/api/tutors/me/offerings/${id}`, body);
+
+// Profiles & safety
+export const getAuthConfig = () => apiGet('/api/auth/config');
+export const uploadMyMedia = (kind, file) => {
+  const fd = new FormData();
+  fd.append('kind', kind);
+  fd.append('file', file);
+  return api('/api/users/me/media', { method: 'POST', body: fd });
+};
+export const adminGetUser = (id) => apiGet(`/api/admin/users/${id}`);
+export const adminUserBlocks = (id) => apiGet(`/api/admin/users/${id}/blocks`);
+export const adminVoidUserOpen = (id, reason = '') =>
+  apiPost(`/api/admin/users/${id}/void`, { reason });
+export const adminVerifyTax = (id) => apiPost(`/api/admin/users/${id}/verify-tax`, {});
+export const getClassDoc = (token) => apiGet(`/api/class-docs/${encodeURIComponent(token)}`);
+export const saveClassDoc = (token, body) =>
+  api(`/api/class-docs/${encodeURIComponent(token)}`, { method: 'PUT', body: { body } });

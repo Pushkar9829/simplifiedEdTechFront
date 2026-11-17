@@ -122,6 +122,12 @@ export function AuthProvider({ children }) {
     [completeLogin]
   );
 
+  // Real Google sign-in: the server verifies the Google ID token (credential) and uses its email.
+  const loginGoogleToken = useCallback(
+    async ({ credential, name, role }) => completeLogin(await googleLoginApi({ credential, name, role })),
+    [completeLogin]
+  );
+
   const logout = useCallback(async () => {
     try {
       await logoutApi();
@@ -142,11 +148,12 @@ export function AuthProvider({ children }) {
       sendOtp,
       login,
       loginGoogle,
+      loginGoogleToken,
       logout,
       refresh,
       homePath: user ? homePathFor(user.role) : '/login',
     }),
-    [user, profile, loading, sessionError, sendOtp, login, loginGoogle, logout, refresh]
+    [user, profile, loading, sessionError, sendOtp, login, loginGoogle, loginGoogleToken, logout, refresh]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

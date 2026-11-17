@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   listConversations,
   listMessages,
@@ -24,6 +25,7 @@ import { useListFilter } from '../../hooks/useListFilter';
 import { mediaUrl } from '../../utils/mediaUrl';
 import { errorMessage } from '../../utils/errors';
 import { GlyphIcon } from './sharedUi';
+import BlockUserButton, { useMyBlocks } from './BlockUserButton';
 import { groupByDay, shortWhen, timeOnly } from './sharedTime';
 import './shared.css';
 import './messages.css';
@@ -107,6 +109,7 @@ export default function MessagesPage() {
   const [opening, setOpening] = useState(false);
   const [convosReady, setConvosReady] = useState(false);
   const [seen, setSeen] = useState(readSeen);
+  const blocks = useMyBlocks();
   const scrollRef = useRef(null);
   const stickToBottom = useRef(true);
   const textRef = useRef(null);
@@ -172,6 +175,19 @@ export default function MessagesPage() {
       setOpening(false);
     }
   };
+
+  // Deep link from elsewhere (e.g. "Message guidance tutor"): /messages?with=<userId> opens that chat once.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const withId = searchParams.get('with');
+  useEffect(() => {
+    if (!withId || !/^[a-f0-9]{24}$/i.test(withId)) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('with');
+    setSearchParams(next, { replace: true });
+    startChat(withId);
+    // Run once per deep link; startChat is stable enough for this one-off call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [withId]);
 
   const onSend = async (e) => {
     e?.preventDefault?.();
@@ -282,6 +298,8 @@ export default function MessagesPage() {
     (c?.participants || []).find((p) => p._id !== user?.id && p._id !== user?._id);
   const activeConvo = conversations.find((c) => c._id === active);
   const activeOther = otherOf(activeConvo);
+  const activeOtherId = String(activeOther?._id || '');
+  const activeBlocked = blocks.isBlocked(activeOtherId);
   const isUnread = (c) => {
     if (c._id === active) return false;
     const last = c.lastMessageAt ? new Date(c.lastMessageAt).getTime() : 0;
@@ -478,7 +496,25 @@ export default function MessagesPage() {
                     <Icon name="shield-check" size={14} />
                     {!phone ? 'Contact details hidden' : null}
                   </span>
+                  {activeOtherId &&
+                  activeOther?.role !== 'admin' &&
+                  // Family threads (student <-> parent) are not blockable here.
+                  !['student:parent', 'parent:student'].includes(`${user?.role}:${activeOther?.role}`) ? (
+                    <BlockUserButton
+                      userId={activeOtherId}
+                      name={personLabel(activeOther, user)}
+                      blocked={activeBlocked}
+                      iconOnly={phone}
+                      onChange={() => blocks.reload()}
+                    />
+                  ) : null}
                 </header>
+                {activeBlocked ? (
+                  <div className="sp-thread-blocked" role="status">
+                    <Icon name="lock" size={14} />
+                    You blocked {personLabel(activeOther, user)}. Unblock to send messages again.
+                  </div>
+                ) : null}
 
                 <div className="sp-thread-scroll" ref={scrollRef} onScroll={onThreadScroll}>
                   {threadLoading && !messages.length ? (
@@ -590,7 +626,7 @@ export default function MessagesPage() {
                     <button
                       type="submit"
                       className="erp-btn-primary erp-btn-icon-only sp-send"
-                      disabled={sending || !body.trim()}
+                      disabled={sending || !body.trim() || activeBlocked}
                       aria-label={sending ? 'Sending' : 'Send message'}
                     >
                       {sending ? <span className="erp-spinner erp-spinner-sm" aria-hidden="true" /> : <GlyphIcon name="send" size={17} />}

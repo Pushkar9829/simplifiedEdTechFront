@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getStudentDashboard, joinBooking, listPayable, listScheduleChanges } from '../../api';
+import {
+  getMySubscription,
+  getStudentDashboard,
+  joinBooking,
+  listBookings,
+  listPayable,
+  listScheduleChanges,
+  setSubscriptionAutoRenew,
+} from '../../api';
 import ClassToolsModal from '../../components/ClassToolsModal';
+import CurrencyChip from '../../components/CurrencyChip';
+import { ClassCodeCard } from '../../components/ClassCode';
+import { pickCodeBooking } from '../../components/classCodeLogic';
 import {
   ErpAttentionItem,
   ErpAttentionList,
@@ -22,6 +33,7 @@ import { titleCase } from './studentOptions';
 import { firstName, formatWhen, greeting, idOf, subjectNameMap, timeUntil, viewerZone } from './studentTime';
 import { LinkButton } from './studentUi';
 import './student.css';
+import './studentPlan.css';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TONES = ['lav', 'sky', 'mint', 'peach', 'butter', 'pink'];
@@ -230,6 +242,125 @@ function Ring({ value, max, marker, children }) {
   );
 }
 
+/** "My plan" strip: plan credits left, period end, auto-renew, renew / upgrade (decision #2). */
+function MyPlanStrip() {
+  const [info, setInfo] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    getMySubscription()
+      .then(setInfo)
+      .catch(() => setInfo(null));
+  }, []);
+
+  if (!info) return null;
+  const sub = info.active ? info.subscription : null;
+  const plansPath = '/student/payments?tab=plans';
+
+  if (!sub) {
+    const lapsed = info.subscription?.status === 'expired';
+    return (
+      <section className="bt-tile bt-peach bt-subs" aria-label="My plan">
+        <div className="bt-subs-id">
+          <span className="bt-ic bt-peach-ic">
+            <Icon name="ticket" size={18} />
+          </span>
+          <div className="bt-subs-id-tx">
+            <span className="bt-subs-eyebrow">My plan</span>
+            <h3 className="bt-subs-name">{lapsed ? `${info.subscription.planName || 'Your plan'} expired` : 'No plan yet'}</h3>
+            <span className="bt-subs-sub">Prepaid class credits work with any tutor — no invoice per class.</span>
+          </div>
+        </div>
+        <div />
+        <div className="bt-subs-actions">
+          <LinkButton to={plansPath} icon="sparkles">
+            {lapsed ? 'Renew a plan' : 'See plans'}
+          </LinkButton>
+        </div>
+      </section>
+    );
+  }
+
+  const total = Number(sub.classesTotal) || 0;
+  const left = Number(info.creditsLeft) || 0;
+  const pct = total ? Math.round((left / total) * 100) : 0;
+  const ends = new Date(sub.periodEnd);
+  const endLabel = ends.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  const recurring = (sub.billingCycle || 'one_time') !== 'one_time';
+  const renewal = info.renewalInvoice;
+  const renewalDue = renewal?.canPay && ['pending', 'failed'].includes(renewal.status);
+
+  const toggle = async (e) => {
+    const next = e.target.checked;
+    setBusy(true);
+    setMsg('');
+    try {
+      const updated = await setSubscriptionAutoRenew(sub._id, next);
+      setInfo((d) => ({ ...d, subscription: { ...d.subscription, autoRenew: updated?.autoRenew ?? next } }));
+    } catch (err) {
+      setMsg(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="bt-tile bt-peach bt-subs" aria-label="My plan">
+      <div className="bt-subs-id">
+        <span className="bt-ic bt-peach-ic">
+          <Icon name="ticket" size={18} />
+        </span>
+        <div className="bt-subs-id-tx">
+          <span className="bt-subs-eyebrow">My plan · {titleCase(sub.planKind || 'plan')}</span>
+          <h3 className="bt-subs-name">{sub.planName || 'Class plan'}</h3>
+          <span className="bt-subs-sub">
+            <Icon name="calendar" size={14} />
+            {sub.renewsSoon ? <span className="bt-subs-warn">Ends {endLabel}</span> : `Valid until ${endLabel}`}
+            {sub.nextPeriod?.classes ? ' · renewal paid' : ''}
+          </span>
+        </div>
+      </div>
+      <div className="bt-subs-meter">
+        <div className="bt-subs-count">
+          <b>{left}</b>
+          <span>
+            of {total} class credit{total === 1 ? '' : 's'} left
+          </span>
+        </div>
+        <div
+          className="bt-subs-track"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-valuenow={left}
+          aria-label="Plan credits left"
+        >
+          <div className="bt-subs-fill" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      <div className="bt-subs-actions">
+        {recurring ? (
+          <label className="bt-subs-toggle" aria-disabled={busy}>
+            <input type="checkbox" checked={Boolean(sub.autoRenew)} disabled={busy} onChange={toggle} />
+            Auto-renew
+          </label>
+        ) : null}
+        {renewalDue ? (
+          <LinkButton to="/student/payments" state={{ paymentId: renewal._id }} icon="credit-card">
+            Pay renewal {money(renewal.amount, renewal.currency)}
+          </LinkButton>
+        ) : (
+          <LinkButton to={plansPath} variant={sub.renewsSoon ? 'primary' : 'secondary'} icon="refresh">
+            {sub.renewsSoon ? 'Renew' : 'Renew / upgrade'}
+          </LinkButton>
+        )}
+      </div>
+      {msg ? <p className="bt-subs-msg">{msg}</p> : null}
+    </section>
+  );
+}
+
 function DashboardSkeleton() {
   return (
     <div className="page st-page bt-dash" aria-busy="true">
@@ -243,6 +374,47 @@ function DashboardSkeleton() {
         <ErpSkeleton className="bt-sk bt-a-chart" height="12rem" radius="28px" />
       </div>
     </div>
+  );
+}
+
+// Shows the class start/end code when a class is about to start or running (same rule as Bookings).
+function DashboardClassCode({ zone }) {
+  const [items, setItems] = useState([]);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let live = true;
+    const load = () => {
+      const now = Date.now();
+      listBookings({
+        from: new Date(now - 6 * 3600000).toISOString(),
+        to: new Date(now + 2 * 3600000).toISOString(),
+        excludeStatus: 'cancelled',
+        sort: 'startAt',
+        limit: 20,
+      })
+        .then((d) => live && setItems(d?.items || []))
+        .catch(() => {});
+    };
+    load();
+    // Re-check the window every 30 s; refetch every minute so verified codes move the card on.
+    const t = window.setInterval(() => setTick((n) => n + 1), 30000);
+    const r = window.setInterval(load, 60000);
+    return () => {
+      live = false;
+      window.clearInterval(t);
+      window.clearInterval(r);
+    };
+  }, []);
+  // tick re-evaluates the open window as time passes.
+  const booking = useMemo(() => pickCodeBooking(items), [items, tick]);
+  if (!booking) return null;
+  return (
+    <ClassCodeCard
+      key={booking._id}
+      booking={booking}
+      timeZone={zone}
+      subtitle={`${booking.subjectId?.name || 'Class'} · ${formatWhen(booking.startAt, zone)} · ${tutorRef(booking.tutorUserId)}`}
+    />
   );
 }
 
@@ -593,6 +765,7 @@ export default function StudentDashboard() {
           </p>
         </div>
         <div className="bt-greet-actions">
+          <CurrencyChip />
           <LinkButton to="/student/tutors" variant="secondary" icon="search" className="bt-search-pill">
             Find a tutor
           </LinkButton>
@@ -601,6 +774,10 @@ export default function StudentDashboard() {
           </LinkButton>
         </div>
       </header>
+
+      <DashboardClassCode zone={zone} />
+
+      <MyPlanStrip />
 
       {joinMsg && (
         <ErpBanner variant="info" onDismiss={() => setJoinMsg('')}>
