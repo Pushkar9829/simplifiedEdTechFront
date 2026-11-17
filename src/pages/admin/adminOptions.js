@@ -104,7 +104,16 @@ export function resourceTypeOptions(includeAll = false) {
 }
 
 export function subjectOptions(subjects = []) {
-  return subjects.map((s) => ({ value: s._id, label: s.name }));
+  // A tutor can offer one subject at several levels (SL + HL); list each subject once.
+  const seen = new Set();
+  return subjects
+    .filter((s) => {
+      const id = String(s?._id ?? '');
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .map((s) => ({ value: s._id, label: s.name }));
 }
 
 export const CAMPAIGN_CHANNEL_OPTIONS = [

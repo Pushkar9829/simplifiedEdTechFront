@@ -190,13 +190,24 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
     [data]
   );
 
-  const selectedOffering = useMemo(
-    () => (data?.subjects || []).find((s) => String(s.subjectId?._id || s.subjectId) === String(subjectId)),
+  // Every offering for the chosen subject (a tutor may teach it at SL and HL with different rates).
+  const subjectOfferings = useMemo(
+    () => (data?.subjects || []).filter((s) => String(s.subjectId?._id || s.subjectId) === String(subjectId)),
     [data, subjectId]
+  );
+
+  // Same lookup the API uses to price the class: subject + level, else any offering for the subject.
+  const selectedOffering = useMemo(
+    () => subjectOfferings.find((s) => s.level === level) || subjectOfferings[0],
+    [subjectOfferings, level]
   );
 
   const levelOptions = useMemo(() => {
     const LEVEL_OPTIONS = options('subject_level');
+    const offered = subjectOfferings.map((s) => s.level).filter(Boolean);
+    if (offered.length) {
+      return LEVEL_OPTIONS.filter((o) => offered.includes(o.value));
+    }
     const fromSubject = selectedOffering?.subjectId?.levels || [];
     if (fromSubject.length) {
       return LEVEL_OPTIONS.filter((o) => fromSubject.includes(o.value));
@@ -205,7 +216,7 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
       return LEVEL_OPTIONS.filter((o) => o.value === selectedOffering.level);
     }
     return LEVEL_OPTIONS;
-  }, [selectedOffering, options]);
+  }, [subjectOfferings, selectedOffering, options]);
 
   useEffect(() => {
     if (levelOptions.length && !levelOptions.some((o) => o.value === level)) {
@@ -262,6 +273,16 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
     ...[teachesOnline && Number(onlineRate), teachesOffline && Number(offlineRate)].filter((r) => r > 0),
     Infinity
   );
+  // Price for the class being booked, mirroring the API (booking.service createBooking):
+  // the subject/level offering rate wins, otherwise the tutor's profile rate.
+  const classPrice = (mode) => {
+    const o = selectedOffering;
+    const offeringRate = o && (mode === 'offline' ? o.offlineRate || o.hourlyRate : o.onlineRate || o.hourlyRate);
+    return {
+      rate: offeringRate || (mode === 'offline' ? offlineRate : onlineRate),
+      currency: (offeringRate && o.currency) || p.currency,
+    };
+  };
 
   const bookSlots = (data.availability || []).filter(
     (s) => !s.isBooked && (!s.deliveryMode || s.deliveryMode === deliveryMode)
@@ -1020,7 +1041,8 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
               <span className="erp-label">Class mode</span>
               <div className="st-choice-grid" role="radiogroup" aria-label="Class mode">
                 {modeOptions.map((o) => {
-                  const rate = o.value === 'offline' ? offlineRate : onlineRate;
+                  const { rate, currency } = classPrice(o.value);
+                  const price = fmtMoney(rate, currency);
                   return (
                     <button
                       key={o.value}
@@ -1037,8 +1059,8 @@ export default function StudentTutorDetail({ studentUserId, childName = '', paym
                       <span>
                         <strong style={{ fontWeight: 600 }}>{o.label}</strong>
                         <small>
-                          {fmtMoney(rate, p.currency).primary} / hr
-                          {fmtMoney(rate, p.currency).approx ? ` (${fmtMoney(rate, p.currency).approx})` : ''}
+                          {price.primary} / hr
+                          {price.approx ? ` (${price.approx})` : ''}
                           {o.value === 'offline' ? ' · at your address' : ' · video class'}
                         </small>
                       </span>
