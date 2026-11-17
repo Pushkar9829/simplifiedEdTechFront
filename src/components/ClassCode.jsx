@@ -53,12 +53,12 @@ export function ClassCodeCard({ booking, timeZone, isParent = false, subtitle, o
     setProof(booking.classProof || {});
   }, [booking]);
 
-  const fetchCode = async () => {
+  const fetchCode = async (fresh = false) => {
     if (!next.phase) return;
     setBusy(true);
     setError('');
     try {
-      const data = await getClassCode(booking._id, next.phase);
+      const data = await getClassCode(booking._id, next.phase, fresh);
       if (data.verified) {
         setCode(null);
         setProof((p) => ({ ...p, [`${data.phase}VerifiedAt`]: data.verifiedAt }));
@@ -179,7 +179,7 @@ export function ClassCodeCard({ booking, timeZone, isParent = false, subtitle, o
               <Icon name="clock" size={14} />
               {live ? `Valid for ${clock(left)}` : busy ? 'Getting your code…' : 'No code yet'}
             </span>
-            <ErpButton variant="secondary" size="sm" icon="refresh" loading={busy} onClick={fetchCode}>
+            <ErpButton variant="secondary" size="sm" icon="refresh" loading={busy} onClick={() => fetchCode(true)}>
               New code
             </ErpButton>
           </div>

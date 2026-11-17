@@ -82,7 +82,9 @@ export const getBookingSummary = (id) => apiGet(`/api/bookings/${id}/summary`);
 export const getBookingChain = (id) => apiGet(`/api/bookings/${id}/chain`);
 export const getStudentInsights = (studentId) => apiGet(`/api/bookings/students/${studentId}/insights`);
 // Bookings: class codes (#1), class links (#7), calendar (#6)
-export const getClassCode = (id, phase = 'start') => apiGet(`/api/bookings/${id}/class-code?phase=${phase}`);
+// fresh=true replaces the current code (the "New code" button); otherwise every device gets the same code.
+export const getClassCode = (id, phase = 'start', fresh = false) =>
+  apiGet(`/api/bookings/${id}/class-code?phase=${phase}${fresh ? '&fresh=1' : ''}`);
 export const verifyClassCode = (id, phase, code) => apiPost(`/api/bookings/${id}/class-code/verify`, { phase, code });
 export const overrideClassProof = (id, reason) => apiPost(`/api/bookings/${id}/class-proof/override`, { reason });
 export const updateClassLinks = (id, body) => apiPatch(`/api/bookings/${id}/class-links`, body);
